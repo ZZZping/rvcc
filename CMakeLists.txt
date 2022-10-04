@@ -16,3 +16,4 @@ add_executable( rvcc
 
 # 编译参数
 target_compile_options(rvcc PRIVATE -std=c11 -g -fno-common)
+target_link_libraries(rvcc m)
