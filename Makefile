@@ -20,6 +20,10 @@ rvcc: $(OBJS)
 # 所有的可重定位文件依赖于rvcc.h的头文件
 $(OBJS): rvcc.h
 
+test/macro.exe: rvcc test/macro.c
+	./rvcc -c -o test/macro.o test/macro.c
+	$(CC) -o $@ test/macro.o -xc test/common
+
 TEST_SRCS=$(wildcard test/*.c)
 TESTS=$(TEST_SRCS:.c=.exe)
 
@@ -50,6 +54,11 @@ stage2/%.o: rvcc self.py %.c
 	mkdir -p stage2/test
 	./self.py rvcc.h $*.c > stage2/$*.c
 	./rvcc -c -o stage2/$*.o stage2/$*.c
+
+stage2/test/macro.exe: stage2/rvcc test/macro.c
+	mkdir -p stage2/test
+	./stage2/rvcc -c -o stage2/test/macro.o test/macro.c
+	$(CC) -o $@ stage2/test/macro.o -xc test/common
 
 # 利用stage2的rvcc去进行测试
 stage2/test/%.exe: stage2/rvcc test/%.c
