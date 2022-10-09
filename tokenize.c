@@ -1,10 +1,10 @@
 #include "rvcc.h"
 
-// 输入的文件名
-static char *CurrentFilename;
+// Input file
+static File *CurrentFile;
 
-// 输入的字符串
-static char *CurrentInput;
+// A list of all input files.
+static File **InputFiles;
 
 // True if the current position is at the beginning of a line
 static bool AtBOL;
@@ -30,13 +30,14 @@ void error(char *Fmt, ...) {
 // 输出例如下面的错误，并退出
 // foo.c:10: x = y + 1;
 //               ^ <错误信息>
-static void verrorAt(int LineNo, char *Loc, char *Fmt, va_list VA) {
+static void verrorAt(char *Filename, char *Input, int LineNo, char *Loc,
+                     char *Fmt, va_list VA) {
   // 查找包含loc的行
   char *Line = Loc;
   // Line递减到当前行的最开始的位置
   // Line<CurrentInput, 判断是否读取到文件最开始的位置
   // Line[-1] != '\n'，Line字符串前一个字符是否为换行符（上一行末尾）
-  while (CurrentInput < Line && Line[-1] != '\n')
+  while (Input < Line && Line[-1] != '\n')
     Line--;
 
   // End递增到行尾的换行符
@@ -46,7 +47,7 @@ static void verrorAt(int LineNo, char *Loc, char *Fmt, va_list VA) {
 
   // 输出 文件名:错误行
   // Indent记录输出了多少个字符
-  int Indent = fprintf(stderr, "%s:%d: ", CurrentFilename, LineNo);
+  int Indent = fprintf(stderr, "%s:%d: ", Filename, LineNo);
   // 输出Line的行内所有字符（不含换行符）
   fprintf(stderr, "%.*s\n", (int)(End - Line), Line);
 
@@ -64,13 +65,13 @@ static void verrorAt(int LineNo, char *Loc, char *Fmt, va_list VA) {
 // 字符解析出错
 void errorAt(char *Loc, char *Fmt, ...) {
   int LineNo = 1;
-  for (char *P = CurrentInput; P < Loc; P++)
+  for (char *P = CurrentFile->Contents; P < Loc; P++)
     if (*P == '\n')
       LineNo++;
 
   va_list VA;
   va_start(VA, Fmt);
-  verrorAt(LineNo, Loc, Fmt, VA);
+  verrorAt(CurrentFile->Name, CurrentFile->Contents, LineNo, Loc, Fmt, VA);
   exit(1);
 }
 
@@ -78,7 +79,8 @@ void errorAt(char *Loc, char *Fmt, ...) {
 void errorTok(Token *Tok, char *Fmt, ...) {
   va_list VA;
   va_start(VA, Fmt);
-  verrorAt(Tok->LineNo, Tok->Loc, Fmt, VA);
+  verrorAt(Tok->File->Name, Tok->File->Contents, Tok->LineNo, Tok->Loc, Fmt,
+           VA);
   exit(1);
 }
 
@@ -123,6 +125,7 @@ static Token *newToken(TokenKind Kind, char *Start, char *End) {
   Tok->Kind = Kind;
   Tok->Loc = Start;
   Tok->Len = End - Start;
+  Tok->File = CurrentFile;
   Tok->AtBOL = AtBOL;
   AtBOL = false;
   return Tok;
@@ -446,7 +449,7 @@ void convertKeywords(Token *Tok) {
 
 // 为所有Token添加行号
 static void addLineNumbers(Token *Tok) {
-  char *P = CurrentInput;
+  char *P = CurrentFile->Contents;
   int N = 1;
 
   do {
@@ -460,9 +463,11 @@ static void addLineNumbers(Token *Tok) {
 }
 
 // 终结符解析，文件名，文件内容
-Token *tokenize(char *Filename, char *P) {
-  CurrentFilename = Filename;
-  CurrentInput = P;
+static Token *tokenize(File *File) {
+  CurrentFile = File;
+
+  char *P = File->Contents;
+
   Token Head = {};
   Token *Cur = &Head;
 
@@ -571,7 +576,7 @@ static char *readFile(char *Path) {
     if (!FP)
       // errno为系统最后一次的错误代码
       // strerror以字符串的形式输出错误代码
-      error("cannot open %s: %s", Path, strerror(errno));
+      return NULL;
   }
 
   // 要返回的字符串
@@ -606,5 +611,29 @@ static char *readFile(char *Path) {
   return Buf;
 }
 
-// 对文件进行词法分析
-Token *tokenizeFile(char *Path) { return tokenize(Path, readFile(Path)); }
+File **getInputFiles(void) { return InputFiles; }
+
+static File *newFile(char *Name, int FileNo, char *Contents) {
+  File *File = calloc(1, sizeof(File));
+  File->Name = Name;
+  File->FileNo = FileNo;
+  File->Contents = Contents;
+  return File;
+}
+
+Token *tokenizeFile(char *Path) {
+  char *P = readFile(Path);
+  if (!P)
+    return NULL;
+
+  static int FileNo;
+  File *File = newFile(Path, FileNo + 1, P);
+
+  // Save the filename for assembler .file directive.
+  InputFiles = realloc(InputFiles, sizeof(char *) * (FileNo + 2));
+  InputFiles[FileNo] = File;
+  InputFiles[FileNo + 1] = NULL;
+  FileNo++;
+
+  return tokenize(File);
+}

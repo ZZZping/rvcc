@@ -62,6 +62,12 @@ typedef enum {
   TK_EOF,     // 文件终止符，即文件的最后
 } TokenKind;
 
+typedef struct {
+  char *Name;
+  int FileNo;
+  char *Contents;
+} File;
+
 // 终结符结构体
 typedef struct Token Token;
 struct Token {
@@ -74,6 +80,7 @@ struct Token {
   Type *Ty;       // TK_NUM或TK_STR使用
   char *Str;      // 字符串字面量，包括'\0'
 
+  File *File; // 源文件位置
   int LineNo; // 行号
   bool AtBOL; // 终结符在行首（begin of line）时为true
 };
@@ -89,6 +96,7 @@ Token *skip(Token *Tok, char *Str);
 bool consume(Token **Rest, Token *Tok, char *Str);
 // 转换关键字
 void convertKeywords(Token *Tok);
+File **getInputFiles(void);
 // 词法分析
 Token *tokenizeFile(char *Path);
 
@@ -346,3 +354,9 @@ Type *funcType(Type *ReturnTy);
 // 代码生成入口函数
 void codegen(Obj *Prog, FILE *Out);
 int alignTo(int N, int Align);
+
+//
+// 主程序，驱动文件
+//
+
+extern char *BaseFile;
