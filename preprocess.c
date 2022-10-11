@@ -51,10 +51,16 @@ static Token *append(Token *Tok1, Token *Tok2) {
 }
 
 // Skip until next `#endif`.
+// Nested `#if` and `#endif` are skipped.
 static Token *skipCondIncl(Token *Tok) {
   while (Tok->Kind != TK_EOF) {
+    if (isHash(Tok) && equal(Tok->Next, "if")) {
+      Tok = skipCondIncl(Tok->Next->Next);
+      Tok = Tok->Next;
+      continue;
+    }
     if (isHash(Tok) && equal(Tok->Next, "endif"))
-      return Tok;
+      break;
     Tok = Tok->Next;
   }
   return Tok;
