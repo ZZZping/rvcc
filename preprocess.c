@@ -4,7 +4,9 @@
 typedef struct CondIncl CondIncl;
 struct CondIncl {
   CondIncl *Next;
+  enum { IN_THEN, IN_ELSE } Ctx;
   Token *Tok;
+  bool Included;
 };
 
 static CondIncl *CondInclude;
@@ -50,16 +52,29 @@ static Token *append(Token *Tok1, Token *Tok2) {
   return Head.Next;
 }
 
-// Skip until next `#endif`.
+static Token *skipCondIncl2(Token *Tok) {
+  while (Tok->Kind != TK_EOF) {
+    if (isHash(Tok) && equal(Tok->Next, "if")) {
+      Tok = skipCondIncl2(Tok->Next->Next);
+      continue;
+    }
+    if (isHash(Tok) && equal(Tok->Next, "endif"))
+      return Tok->Next->Next;
+    Tok = Tok->Next;
+  }
+  return Tok;
+}
+
+// Skip until next `#else` or `#endif`.
 // Nested `#if` and `#endif` are skipped.
 static Token *skipCondIncl(Token *Tok) {
   while (Tok->Kind != TK_EOF) {
     if (isHash(Tok) && equal(Tok->Next, "if")) {
-      Tok = skipCondIncl(Tok->Next->Next);
-      Tok = Tok->Next;
+      Tok = skipCondIncl2(Tok->Next->Next);
       continue;
     }
-    if (isHash(Tok) && equal(Tok->Next, "endif"))
+
+    if (isHash(Tok) && (equal(Tok->Next, "else") || equal(Tok->Next, "endif")))
       break;
     Tok = Tok->Next;
   }
@@ -96,10 +111,12 @@ static long evalConstExpr(Token **Rest, Token *Tok) {
   return Val;
 }
 
-static CondIncl *pushCondIncl(Token *Tok) {
+static CondIncl *pushCondIncl(Token *Tok, bool Included) {
   CondIncl *CI = calloc(1, sizeof(CondIncl));
   CI->Next = CondInclude;
+  CI->Ctx = IN_THEN;
   CI->Tok = Tok;
+  CI->Included = Included;
   CondInclude = CI;
   return CI;
 }
@@ -143,8 +160,19 @@ static Token *preprocess2(Token *Tok) {
 
     if (equal(Tok, "if")) {
       long Val = evalConstExpr(&Tok, Tok);
-      pushCondIncl(Start);
+      pushCondIncl(Start, Val);
       if (!Val)
+        Tok = skipCondIncl(Tok);
+      continue;
+    }
+
+    if (equal(Tok, "else")) {
+      if (!CondInclude || CondInclude->Ctx == IN_ELSE)
+        errorTok(Start, "stray #else");
+      CondInclude->Ctx = IN_ELSE;
+      Tok = skipLine(Tok->Next);
+
+      if (CondInclude->Included)
         Tok = skipCondIncl(Tok);
       continue;
     }
