@@ -229,6 +229,13 @@ int main() {
 #define M8(x,y) x y
   assert(9, M8(, 4+5), "M8(, 4+5)");
 
+#define M8(x,y) x*y
+  assert(20, M8((2+3), 4), "M8((2+3), 4)");
+
+// [175] 允许括号内的表达式作为宏参数
+#define M8(x,y) x*y
+  assert(12, M8((2,3), 4), "M8((2,3), 4)");
+
   // [159] 支持空指示
   printf("OK\n");
   return 0;

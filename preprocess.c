@@ -274,10 +274,17 @@ static void readMacroDefinition(Token **Rest, Token *Tok) {
 static MacroArg *readMacroArgOne(Token **Rest, Token *Tok) {
   Token Head = {};
   Token *Cur = &Head;
+  int Level = 0;
 
-  while (!equal(Tok, ",") && !equal(Tok, ")")) {
+  while (Level > 0 || !equal(Tok, ",") && !equal(Tok, ")")) {
     if (Tok->Kind == TK_EOF)
       errorTok(Tok, "premature end of input");
+
+    if (equal(Tok, "("))
+      Level++;
+    else if (equal(Tok, ")"))
+      Level--;
+
     Cur = Cur->Next = copyToken(Tok);
     Tok = Tok->Next;
   }
