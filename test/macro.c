@@ -151,6 +151,19 @@ int main() {
 #endif
   assert(5, m, "m");
 
+  // [170] 宏中只展开一次
+  int M2 = 6;
+#define M2 M2 + 3
+  assert(9, M2, "M2");
+
+#define M3 M2 + 3
+  assert(12, M3, "M3");
+
+  int M4 = 3;
+#define M4 M5 * 5
+#define M5 M4 + 2
+  assert(13, M4, "M4");
+
   // [159] 支持空指示
   printf("OK\n");
   return 0;
