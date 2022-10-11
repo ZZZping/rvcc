@@ -129,7 +129,8 @@ static Token *append(Token *Tok1, Token *Tok2) {
 
 static Token *skipCondIncl2(Token *Tok) {
   while (Tok->Kind != TK_EOF) {
-    if (isHash(Tok) && equal(Tok->Next, "if")) {
+    if (isHash(Tok) && (equal(Tok->Next, "if") || equal(Tok->Next, "ifdef") ||
+                        equal(Tok->Next, "ifndef"))) {
       Tok = skipCondIncl2(Tok->Next->Next);
       continue;
     }
@@ -144,7 +145,8 @@ static Token *skipCondIncl2(Token *Tok) {
 // Nested `#if` and `#endif` are skipped.
 static Token *skipCondIncl(Token *Tok) {
   while (Tok->Kind != TK_EOF) {
-    if (isHash(Tok) && equal(Tok->Next, "if")) {
+    if (isHash(Tok) && (equal(Tok->Next, "if") || equal(Tok->Next, "ifdef") ||
+                        equal(Tok->Next, "ifndef"))) {
       Tok = skipCondIncl2(Tok->Next->Next);
       continue;
     }
@@ -299,6 +301,24 @@ static Token *preprocess2(Token *Tok) {
       long Val = evalConstExpr(&Tok, Tok);
       pushCondIncl(Start, Val);
       if (!Val)
+        Tok = skipCondIncl(Tok);
+      continue;
+    }
+
+    if (equal(Tok, "ifdef")) {
+      bool Defined = findMacro(Tok->Next);
+      pushCondIncl(Tok, Defined);
+      Tok = skipLine(Tok->Next->Next);
+      if (!Defined)
+        Tok = skipCondIncl(Tok);
+      continue;
+    }
+
+    if (equal(Tok, "ifndef")) {
+      bool Defined = findMacro(Tok->Next);
+      pushCondIncl(Tok, !Defined);
+      Tok = skipLine(Tok->Next->Next);
+      if (Defined)
         Tok = skipCondIncl(Tok);
       continue;
     }
