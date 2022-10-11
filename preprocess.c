@@ -5,9 +5,9 @@ struct Macro {
   Macro *Next;
   char *Name;
   Token *Body;
+  bool Deleted;
 };
 
-static Macro *Macros;
 // `#if` can be nested, so we use a stack to manage nested `#if`s.
 typedef struct CondIncl CondIncl;
 struct CondIncl {
@@ -17,6 +17,7 @@ struct CondIncl {
   bool Included;
 };
 
+static Macro *Macros;
 static CondIncl *CondInclude;
 
 static bool isHash(Token *Tok) { return Tok->AtBOL && equal(Tok, "#"); }
@@ -136,7 +137,7 @@ static Macro *findMacro(Token *Tok) {
 
   for (Macro *M = Macros; M; M = M->Next)
     if (strlen(M->Name) == Tok->Len && !strncmp(M->Name, Tok->Loc, Tok->Len))
-      return M;
+      return M->Deleted ? NULL : M;
   return NULL;
 }
 
@@ -206,6 +207,18 @@ static Token *preprocess2(Token *Tok) {
         errorTok(Tok, "macro name must be an identifier");
       char *Name = strndup(Tok->Loc, Tok->Len);
       addMacro(Name, copyLine(&Tok, Tok->Next));
+      continue;
+    }
+
+    if (equal(Tok, "undef")) {
+      Tok = Tok->Next;
+      if (Tok->Kind != TK_IDENT)
+        errorTok(Tok, "macro name must be an identifier");
+      char *Name = strndup(Tok->Loc, Tok->Len);
+      Tok = skipLine(Tok->Next);
+
+      Macro *M = addMacro(Name, NULL);
+      M->Deleted = true;
       continue;
     }
 

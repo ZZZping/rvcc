@@ -126,6 +126,14 @@ int main() {
 #define END )
   ASSERT_ 5, if, five END;
 
+// [168] 支持 #undef
+#undef ASSERT_
+#undef if
+#undef five
+#undef END
+
+  if (0);
+
   // [159] 支持空指示
   printf("OK\n");
   return 0;
