@@ -2,6 +2,17 @@
 
 static bool isHash(Token *Tok) { return Tok->AtBOL && equal(Tok, "#"); }
 
+// Some preprocessor directives such as #include allow extraneous
+// tokens before newline. This function skips such tokens.
+static Token *skipLine(Token *Tok) {
+  if (Tok->AtBOL)
+    return Tok;
+  warnTok(Tok, "extra token");
+  while (Tok->AtBOL)
+    Tok = Tok->Next;
+  return Tok;
+}
+
 static Token *copyToken(Token *Tok) {
   Token *T = calloc(1, sizeof(Token));
   *T = *Tok;
@@ -49,7 +60,8 @@ static Token *preprocess2(Token *Tok) {
       Token *Tok2 = tokenizeFile(Path);
       if (!Tok2)
         errorTok(Tok, "%s", strerror(errno));
-      Tok = append(Tok2, Tok->Next);
+      Tok = skipLine(Tok->Next);
+      Tok = append(Tok2, Tok);
       continue;
     }
 
