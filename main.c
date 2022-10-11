@@ -5,6 +5,8 @@
 // 注意 ~ 应替换为具体的 /home/用户名 的路径
 static char *RVPath = "";
 
+// -E选项
+static bool OptE;
 // -S选项
 static bool OptS;
 // -c选项
@@ -86,6 +88,12 @@ static void parseArgs(int Argc, char **Argv) {
     // 解析-c
     if (!strcmp(Argv[I], "-c")) {
       OptC = true;
+      continue;
+    }
+
+    // 解析-E
+    if (!strcmp(Argv[I], "-E")) {
+      OptE = true;
       continue;
     }
 
@@ -231,6 +239,20 @@ static void runCC1(int Argc, char **Argv, char *Input, char *Output) {
   runSubprocess(Args);
 }
 
+// Print tokens to stdout. Used for -E.
+static void printTokens(Token *Tok) {
+  FILE *Out = openFile(OptO ? OptO : "-");
+
+  int Line = 1;
+  for (; Tok->Kind != TK_EOF; Tok = Tok->Next) {
+    if (Line > 1 && Tok->AtBOL)
+      fprintf(Out, "\n");
+    fprintf(Out, " %.*s", Tok->Len, Tok->Loc);
+    Line++;
+  }
+  fprintf(Out, "\n");
+}
+
 // 编译C文件到汇编文件
 static void cc1(void) {
   // 解析文件，生成终结符流
@@ -240,6 +262,12 @@ static void cc1(void) {
 
   // 预处理
   Tok = preprocess(Tok);
+
+  // If -E is given, print out preprocessed C code as a result.
+  if (OptE) {
+    printTokens(Tok);
+    return;
+  }
 
   // 解析终结符流
   Obj *Prog = parse(Tok);
@@ -411,9 +439,9 @@ int main(int Argc, char **Argv) {
     return 0;
   }
 
-  // 当前不能指定-c、-S后，将多个输入文件，输出到一个文件中
-  if (InputPaths.Len > 1 && OptO && (OptC || OptS))
-    error("cannot specify '-o' with '-c' or '-S' with multiple files");
+  // 当前不能指定-c、-S、-E后，将多个输入文件，输出到一个文件中
+  if (InputPaths.Len > 1 && OptO && (OptC || OptS || OptE))
+    error("cannot specify '-o' with '-c', '-S' or '-E' with multiple files");
 
   // 链接器参数
   StringArray LdArgs = {};
@@ -455,6 +483,12 @@ int main(int Argc, char **Argv) {
     // 处理.c文件
     if (!endsWith(Input, ".c") && strcmp(Input, "-"))
       error("unknown file extension: %s", Input);
+
+    // Just preprocess
+    if (OptE) {
+      runCC1(Argc, Argv, Input, NULL);
+      continue;
+    }
 
     // 如果有-S选项，那么执行调用cc1程序
     if (OptS) {
