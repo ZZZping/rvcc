@@ -247,7 +247,9 @@ static void printTokens(Token *Tok) {
   for (; Tok->Kind != TK_EOF; Tok = Tok->Next) {
     if (Line > 1 && Tok->AtBOL)
       fprintf(Out, "\n");
-    fprintf(Out, " %.*s", Tok->Len, Tok->Loc);
+    if (Tok->HasSpace && !Tok->AtBOL)
+      fprintf(Out, " ");
+    fprintf(Out, "%.*s", Tok->Len, Tok->Loc);
     Line++;
   }
   fprintf(Out, "\n");

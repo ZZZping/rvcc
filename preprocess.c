@@ -27,6 +27,7 @@ typedef struct Macro Macro;
 struct Macro {
   Macro *Next;
   char *Name;
+  bool IsObjlike; // Object-like or function-like
   Token *Body;
   bool Deleted;
 };
@@ -210,13 +211,30 @@ static Macro *findMacro(Token *Tok) {
   return NULL;
 }
 
-static Macro *addMacro(char *Name, Token *Body) {
+static Macro *addMacro(char *Name, bool IsObjlike, Token *Body) {
   Macro *M = calloc(1, sizeof(Macro));
   M->Next = Macros;
   M->Name = Name;
+  M->IsObjlike = IsObjlike;
   M->Body = Body;
   Macros = M;
   return M;
+}
+
+static void readMacroDefinition(Token **Rest, Token *Tok) {
+  if (Tok->Kind != TK_IDENT)
+    errorTok(Tok, "macro name must be an identifier");
+  char *Name = strndup(Tok->Loc, Tok->Len);
+  Tok = Tok->Next;
+
+  if (!Tok->HasSpace && equal(Tok, "(")) {
+    // Function-like macro
+    Tok = skip(Tok->Next, ")");
+    addMacro(Name, false, copyLine(Rest, Tok));
+  } else {
+    // Object-like macro
+    addMacro(Name, true, copyLine(Rest, Tok));
+  }
 }
 
 // If tok is a macro, expand it and return true.
@@ -229,9 +247,22 @@ static bool expandMacro(Token **Rest, Token *Tok) {
   if (!M)
     return false;
 
-  Hideset *Hs = hidesetUnion(Tok->Hideset, newHideset(M->Name));
-  Token *Body = addHideset(M->Body, Hs);
-  *Rest = append(Body, Tok->Next);
+  // Object-like macro application
+  if (M->IsObjlike) {
+    Hideset *Hs = hidesetUnion(Tok->Hideset, newHideset(M->Name));
+    Token *Body = addHideset(M->Body, Hs);
+    *Rest = append(Body, Tok->Next);
+    return true;
+  }
+
+  // If a funclike macro token is not followed by an argument list,
+  // treat it as a normal identifier.
+  if (!equal(Tok->Next, "("))
+    return false;
+
+  // Function-like macro application
+  Tok = skip(Tok->Next->Next, ")");
+  *Rest = append(M->Body, Tok);
   return true;
 }
 
@@ -277,11 +308,7 @@ static Token *preprocess2(Token *Tok) {
     }
 
     if (equal(Tok, "define")) {
-      Tok = Tok->Next;
-      if (Tok->Kind != TK_IDENT)
-        errorTok(Tok, "macro name must be an identifier");
-      char *Name = strndup(Tok->Loc, Tok->Len);
-      addMacro(Name, copyLine(&Tok, Tok->Next));
+      readMacroDefinition(&Tok, Tok->Next);
       continue;
     }
 
@@ -292,7 +319,7 @@ static Token *preprocess2(Token *Tok) {
       char *Name = strndup(Tok->Loc, Tok->Len);
       Tok = skipLine(Tok->Next);
 
-      Macro *M = addMacro(Name, NULL);
+      Macro *M = addMacro(Name, true, NULL);
       M->Deleted = true;
       continue;
     }
