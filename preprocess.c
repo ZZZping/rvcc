@@ -398,6 +398,18 @@ static Token *stringize(Token *Hash, Token *Arg) {
   return newStrToken(S, Hash);
 }
 
+// Concatenate two tokens to create a new token.
+static Token *paste(Token *LHS, Token *RHS) {
+  // Paste the two tokens.
+  char *Buf = format("%.*s%.*s", LHS->Len, LHS->Loc, RHS->Len, RHS->Loc);
+
+  // Tokenize the resulting string.
+  Token *Tok = tokenize(newFile(LHS->File->Name, LHS->File->FileNo, Buf));
+  if (Tok->Next->Kind != TK_EOF)
+    errorTok(LHS, "pasting forms '%s', an invalid token", Buf);
+  return Tok;
+}
+
 // Replace func-like macro parameters with given arguments.
 static Token *subst(Token *Tok, MacroArg *Args) {
   Token Head = {};
@@ -414,9 +426,54 @@ static Token *subst(Token *Tok, MacroArg *Args) {
       continue;
     }
 
+    if (equal(Tok, "##")) {
+      if (Cur == &Head)
+        errorTok(Tok, "'##' cannot appear at start of macro expansion");
+
+      if (Tok->Next->Kind == TK_EOF)
+        errorTok(Tok, "'##' cannot appear at end of macro expansion");
+
+      MacroArg *Arg = findArg(Args, Tok->Next);
+      if (Arg) {
+        if (Arg->Tok->Kind != TK_EOF) {
+          *Cur = *paste(Cur, Arg->Tok);
+          for (Token *T = Arg->Tok->Next; T->Kind != TK_EOF; T = T->Next)
+            Cur = Cur->Next = copyToken(T);
+        }
+        Tok = Tok->Next->Next;
+        continue;
+      }
+
+      *Cur = *paste(Cur, Tok->Next);
+      Tok = Tok->Next->Next;
+      continue;
+    }
+
+    MacroArg *Arg = findArg(Args, Tok);
+
+    if (Arg && equal(Tok->Next, "##")) {
+      Token *RHS = Tok->Next->Next;
+
+      if (Arg->Tok->Kind == TK_EOF) {
+        MacroArg *Arg2 = findArg(Args, RHS);
+        if (Arg2) {
+          for (Token *T = Arg2->Tok; T->Kind != TK_EOF; T = T->Next)
+            Cur = Cur->Next = copyToken(T);
+        } else {
+          Cur = Cur->Next = copyToken(RHS);
+        }
+        Tok = RHS->Next;
+        continue;
+      }
+
+      for (Token *T = Arg->Tok; T->Kind != TK_EOF; T = T->Next)
+        Cur = Cur->Next = copyToken(T);
+      Tok = Tok->Next;
+      continue;
+    }
+
     // Handle a macro token. Macro arguments are completely macro-expanded
     // before they are substituted into a macro body.
-    MacroArg *Arg = findArg(Args, Tok);
     if (Arg) {
       Token *T = preprocess2(Arg->Tok);
       for (; T->Kind != TK_EOF; T = T->Next)
