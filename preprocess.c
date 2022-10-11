@@ -20,6 +20,8 @@ struct CondIncl {
 static Macro *Macros;
 static CondIncl *CondInclude;
 
+static Token *preprocess2(Token *Tok);
+
 static bool isHash(Token *Tok) { return Tok->AtBOL && equal(Tok, "#"); }
 
 // Some preprocessor directives such as #include allow extraneous
@@ -110,6 +112,7 @@ static Token *copyLine(Token **Rest, Token *Tok) {
 static long evalConstExpr(Token **Rest, Token *Tok) {
   Token *Start = Tok;
   Token *Expr = copyLine(Rest, Tok->Next);
+  Expr = preprocess2(Expr);
 
   if (Expr->Kind == TK_EOF)
     errorTok(Start, "no expression");
