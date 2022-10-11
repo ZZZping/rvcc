@@ -101,6 +101,8 @@ bool consume(Token **Rest, Token *Tok, char *Str);
 // 转换关键字
 void convertKeywords(Token *Tok);
 File **getInputFiles(void);
+File *newFile(char *Name, int FileNo, char *Contents);
+Token *tokenize(File *File);
 // 词法分析
 Token *tokenizeFile(char *Path);
 
