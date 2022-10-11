@@ -1,5 +1,14 @@
 #include "rvcc.h"
 
+// `#if` can be nested, so we use a stack to manage nested `#if`s.
+typedef struct CondIncl CondIncl;
+struct CondIncl {
+  CondIncl *Next;
+  Token *Tok;
+};
+
+static CondIncl *CondInclude;
+
 static bool isHash(Token *Tok) { return Tok->AtBOL && equal(Tok, "#"); }
 
 // Some preprocessor directives such as #include allow extraneous
@@ -20,6 +29,13 @@ static Token *copyToken(Token *Tok) {
   return T;
 }
 
+static Token *newEOF(Token *Tok) {
+  Token *T = copyToken(Tok);
+  T->Kind = TK_EOF;
+  T->Len = 0;
+  return T;
+}
+
 // Append tok2 to the end of tok1.
 static Token *append(Token *Tok1, Token *Tok2) {
   if (!Tok1 || Tok1->Kind == TK_EOF)
@@ -32,6 +48,54 @@ static Token *append(Token *Tok1, Token *Tok2) {
     Cur = Cur->Next = copyToken(Tok1);
   Cur->Next = Tok2;
   return Head.Next;
+}
+
+// Skip until next `#endif`.
+static Token *skipCondIncl(Token *Tok) {
+  while (Tok->Kind != TK_EOF) {
+    if (isHash(Tok) && equal(Tok->Next, "endif"))
+      return Tok;
+    Tok = Tok->Next;
+  }
+  return Tok;
+}
+
+// Copy all tokens until the next newline, terminate them with
+// an EOF token and then returns them. This function is used to
+// create a new list of tokens for `#if` arguments.
+static Token *copyLine(Token **Rest, Token *Tok) {
+  Token head = {};
+  Token *Cur = &head;
+
+  for (; !Tok->AtBOL; Tok = Tok->Next)
+    Cur = Cur->Next = copyToken(Tok);
+
+  Cur->Next = newEOF(Tok);
+  *Rest = Tok;
+  return head.Next;
+}
+
+// Read and evaluate a constant expression.
+static long evalConstExpr(Token **Rest, Token *Tok) {
+  Token *Start = Tok;
+  Token *Expr = copyLine(Rest, Tok->Next);
+
+  if (Expr->Kind == TK_EOF)
+    errorTok(Start, "no expression");
+
+  Token *Rest2;
+  long Val = constExpr(&Rest2, Expr);
+  if (Rest2->Kind != TK_EOF)
+    errorTok(Rest2, "extra token");
+  return Val;
+}
+
+static CondIncl *pushCondIncl(Token *Tok) {
+  CondIncl *CI = calloc(1, sizeof(CondIncl));
+  CI->Next = CondInclude;
+  CI->Tok = Tok;
+  CondInclude = CI;
+  return CI;
 }
 
 // Visit all tokens in `tok` while evaluating preprocessing
@@ -48,6 +112,7 @@ static Token *preprocess2(Token *Tok) {
       continue;
     }
 
+    Token *Start = Tok;
     Tok = Tok->Next;
 
     if (equal(Tok, "include")) {
@@ -70,6 +135,22 @@ static Token *preprocess2(Token *Tok) {
       continue;
     }
 
+    if (equal(Tok, "if")) {
+      long Val = evalConstExpr(&Tok, Tok);
+      pushCondIncl(Start);
+      if (!Val)
+        Tok = skipCondIncl(Tok);
+      continue;
+    }
+
+    if (equal(Tok, "endif")) {
+      if (!CondInclude)
+        errorTok(Start, "stray #endif");
+      CondInclude = CondInclude->Next;
+      Tok = skipLine(Tok->Next);
+      continue;
+    }
+
     // `#`-only line is legal. It's called a null directive.
     if (Tok->AtBOL)
       continue;
@@ -84,6 +165,8 @@ static Token *preprocess2(Token *Tok) {
 // 预处理器入口函数
 Token *preprocess(Token *Tok) {
   Tok = preprocess2(Tok);
+  if (CondInclude)
+    errorTok(CondInclude->Tok, "unterminated conditional directive");
   convertKeywords(Tok);
   return Tok;
 }

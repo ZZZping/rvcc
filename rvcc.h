@@ -247,6 +247,7 @@ struct Node {
 
 // 类型转换，将表达式的值转换为另一种类型
 Node *newCast(Node *Expr, Type *Ty);
+int64_t constExpr(Token **Rest, Token *Tok);
 // 语法解析入口函数
 Obj *parse(Token *Tok);
 
