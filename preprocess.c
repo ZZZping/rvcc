@@ -66,6 +66,7 @@ static Macro *Macros;
 static CondIncl *CondInclude;
 
 static Token *preprocess2(Token *Tok);
+static Macro *findMacro(Token *tok);
 
 static bool isHash(Token *Tok) { return Tok->AtBOL && equal(Tok, "#"); }
 
@@ -227,10 +228,48 @@ static Token *copyLine(Token **Rest, Token *Tok) {
   return head.Next;
 }
 
+static Token *newNumToken(int Val, Token *Tmpl) {
+  char *Buf = format("%d\n", Val);
+  return tokenize(newFile(Tmpl->File->Name, Tmpl->File->FileNo, Buf));
+}
+
+static Token *readConstExpr(Token **rest, Token *tok) {
+  tok = copyLine(rest, tok);
+
+  Token head = {};
+  Token *cur = &head;
+
+  while (tok->Kind != TK_EOF) {
+    // "defined(foo)" or "defined foo" becomes "1" if macro "foo"
+    // is defined. Otherwise "0".
+    if (equal(tok, "defined")) {
+      Token *start = tok;
+      bool has_paren = consume(&tok, tok->Next, "(");
+
+      if (tok->Kind != TK_IDENT)
+        errorTok(start, "macro name must be an identifier");
+      Macro *m = findMacro(tok);
+      tok = tok->Next;
+
+      if (has_paren)
+        tok = skip(tok, ")");
+
+      cur = cur->Next = newNumToken(m ? 1 : 0, start);
+      continue;
+    }
+
+    cur = cur->Next = tok;
+    tok = tok->Next;
+  }
+
+  cur->Next = tok;
+  return head.Next;
+}
+
 // Read and evaluate a constant expression.
 static long evalConstExpr(Token **Rest, Token *Tok) {
   Token *Start = Tok;
-  Token *Expr = copyLine(Rest, Tok->Next);
+  Token *Expr = readConstExpr(Rest, Tok->Next);
   Expr = preprocess2(Expr);
 
   if (Expr->Kind == TK_EOF)
