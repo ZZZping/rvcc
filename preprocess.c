@@ -1,5 +1,13 @@
 #include "rvcc.h"
 
+typedef struct Macro Macro;
+struct Macro {
+  Macro *Next;
+  char *Name;
+  Token *Body;
+};
+
+static Macro *Macros;
 // `#if` can be nested, so we use a stack to manage nested `#if`s.
 typedef struct CondIncl CondIncl;
 struct CondIncl {
@@ -40,13 +48,13 @@ static Token *newEOF(Token *Tok) {
 
 // Append tok2 to the end of tok1.
 static Token *append(Token *Tok1, Token *Tok2) {
-  if (!Tok1 || Tok1->Kind == TK_EOF)
+  if (Tok1->Kind == TK_EOF)
     return Tok2;
 
   Token Head = {};
   Token *Cur = &Head;
 
-  for (; Tok1 && Tok1->Kind != TK_EOF; Tok1 = Tok1->Next)
+  for (; Tok1->Kind != TK_EOF; Tok1 = Tok1->Next)
     Cur = Cur->Next = copyToken(Tok1);
   Cur->Next = Tok2;
   return Head.Next;
@@ -122,6 +130,35 @@ static CondIncl *pushCondIncl(Token *Tok, bool Included) {
   return CI;
 }
 
+static Macro *findMacro(Token *Tok) {
+  if (Tok->Kind != TK_IDENT)
+    return NULL;
+
+  for (Macro *M = Macros; M; M = M->Next)
+    if (strlen(M->Name) == Tok->Len && !strncmp(M->Name, Tok->Loc, Tok->Len))
+      return M;
+  return NULL;
+}
+
+static Macro *addMacro(char *Name, Token *Body) {
+  Macro *M = calloc(1, sizeof(Macro));
+  M->Next = Macros;
+  M->Name = Name;
+  M->Body = Body;
+  Macros = M;
+  return M;
+}
+
+// If tok is a macro, expand it and return true.
+// Otherwise, do nothing and return false.
+static bool expandMacro(Token **Rest, Token *Tok) {
+  Macro *M = findMacro(Tok);
+  if (!M)
+    return false;
+  *Rest = append(M->Body, Tok->Next);
+  return true;
+}
+
 // Visit all tokens in `tok` while evaluating preprocessing
 // macros and directives.
 static Token *preprocess2(Token *Tok) {
@@ -129,6 +166,10 @@ static Token *preprocess2(Token *Tok) {
   Token *Cur = &Head;
 
   while (Tok->Kind != TK_EOF) {
+    // If it is a macro, expand it.
+    if (expandMacro(&Tok, Tok))
+      continue;
+
     // Pass through if it is not a "#".
     if (!isHash(Tok)) {
       Cur = Cur->Next = Tok;
@@ -156,6 +197,15 @@ static Token *preprocess2(Token *Tok) {
         errorTok(Tok, "%s", strerror(errno));
       Tok = skipLine(Tok->Next);
       Tok = append(Tok2, Tok);
+      continue;
+    }
+
+    if (equal(Tok, "define")) {
+      Tok = Tok->Next;
+      if (Tok->Kind != TK_IDENT)
+        errorTok(Tok, "macro name must be an identifier");
+      char *Name = strndup(Tok->Loc, Tok->Len);
+      addMacro(Name, copyLine(&Tok, Tok->Next));
       continue;
     }
 

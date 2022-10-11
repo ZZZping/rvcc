@@ -106,6 +106,26 @@ int main() {
 #endif
   assert(2, m, "m");
 
+  // [167] 支持 #define
+  int M1 = 5;
+
+#define M1 3
+  assert(3, M1, "M1");
+#define M1 4
+  assert(4, M1, "M1");
+
+#define M1 3+4+
+  assert(12, M1 5, "5");
+
+#define M1 3+4
+  assert(23, M1*5, "5");
+
+#define ASSERT_ assert(
+#define if 5
+#define five "5"
+#define END )
+  ASSERT_ 5, if, five END;
+
   // [159] 支持空指示
   printf("OK\n");
   return 0;
