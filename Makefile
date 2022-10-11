@@ -20,17 +20,12 @@ rvcc: $(OBJS)
 # 所有的可重定位文件依赖于rvcc.h的头文件
 $(OBJS): rvcc.h
 
-test/macro.exe: rvcc test/macro.c
-	./rvcc -c -o test/macro.o test/macro.c
-	$(CC) -o $@ test/macro.o -xc test/common
-
 TEST_SRCS=$(wildcard test/*.c)
 TESTS=$(TEST_SRCS:.c=.exe)
 
 # 测试标签，运行测试
 test/%.exe: rvcc test/%.c
-	$(CC) -o- -E -P -C test/$*.c | ./rvcc -c -o test/$*.o -
-#	$(RISCV)/bin/riscv64-unknown-linux-gnu-gcc -o- -E -P -C test/$*.c | ./rvcc -c -o test/$*.o -
+	./rvcc -c -o test/$*.o test/$*.c
 	$(CC) -static -o $@ test/$*.o -xc test/common
 #	$(RISCV)/bin/riscv64-unknown-linux-gnu-gcc -static -o $@ test/$*.o -xc test/common
 
@@ -55,15 +50,10 @@ stage2/%.o: rvcc self.py %.c
 	./self.py rvcc.h $*.c > stage2/$*.c
 	./rvcc -c -o stage2/$*.o stage2/$*.c
 
-stage2/test/macro.exe: stage2/rvcc test/macro.c
-	mkdir -p stage2/test
-	./stage2/rvcc -c -o stage2/test/macro.o test/macro.c
-	$(CC) -o $@ stage2/test/macro.o -xc test/common
-
 # 利用stage2的rvcc去进行测试
 stage2/test/%.exe: stage2/rvcc test/%.c
 	mkdir -p stage2/test
-	$(CC) -o- -E -P -C test/$*.c | ./stage2/rvcc -c -o stage2/test/$*.o -
+	./stage2/rvcc -c -o stage2/test/$*.o test/$*.c
 	$(CC) -o $@ stage2/test/$*.o -xc test/common
 
 test-stage2: $(TESTS:test/%=stage2/test/%)
