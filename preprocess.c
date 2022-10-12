@@ -17,8 +17,9 @@
 // "hideset". Hideset is initially empty, and every time we expand a
 // macro, the macro name is added to the resulting tokens' hidesets.
 //
-// The above macro expansion algorithm is explained in this document,
-// which is used as a basis for the standard's wording:
+// The above macro expansion algorithm is explained in this document
+// written by Dave Prossor, which is used as a basis for the
+// standard's wording:
 // https://github.com/rui314/chibicc/wiki/cpp.algo.pdf
 
 #include "rvcc.h"
@@ -114,6 +115,16 @@ static bool hidesetContains(Hideset *Hs, char *S, int Len) {
     if (strlen(Hs->Name) == Len && !strncmp(Hs->Name, S, Len))
       return true;
   return false;
+}
+
+static Hideset *hidesetIntersection(Hideset *Hs1, Hideset *Hs2) {
+  Hideset Head = {};
+  Hideset *Cur = &Head;
+
+  for (; Hs1; Hs1 = Hs1->Next)
+    if (hidesetContains(Hs2, Hs1->Name, strlen(Hs1->Name)))
+      Cur = Cur->Next = newHideset(Hs1->Name);
+  return Head.Next;
 }
 
 static Token *addHideset(Token *Tok, Hideset *Hs) {
@@ -314,7 +325,8 @@ static MacroArg *readMacroArgs(Token **Rest, Token *Tok, MacroParam *Params) {
 
   if (PP)
     errorTok(Start, "too many arguments");
-  *Rest = skip(Tok, ")");
+  skip(Tok, ")");
+  *Rest = Tok;
   return Head.Next;
 }
 
@@ -377,8 +389,21 @@ static bool expandMacro(Token **Rest, Token *Tok) {
     return false;
 
   // Function-like macro application
+  Token *MacroToken = Tok;
   MacroArg *Args = readMacroArgs(&Tok, Tok, M->Params);
-  *Rest = append(subst(M->Body, Args), Tok);
+  Token *Rparen = Tok;
+
+  // Tokens that consist a func-like macro invocation may have different
+  // hidesets, and if that's the case, it's not clear what the hideset
+  // for the new tokens should be. We take the interesection of the
+  // macro token and the closing parenthesis and use it as a new hideset
+  // as explained in the Dave Prossor's algorithm.
+  Hideset *Hs = hidesetIntersection(MacroToken->Hideset, Rparen->Hideset);
+  Hs = hidesetUnion(Hs, newHideset(M->Name));
+
+  Token *Body = subst(M->Body, Args);
+  Body = addHideset(Body, Hs);
+  *Rest = append(Body, Tok->Next);
   return true;
 }
 

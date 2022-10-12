@@ -14,6 +14,9 @@ int memcmp(char *p, char *q, long n);
 // [172] 支持 #define 零参仿函数
 int ret3(void) { return 3; }
 
+// [176] 宏中终结符只展开一次
+int dbl(int x) { return x*x; }
+
 int main() {
   // [160] 支持 #include "..."
   assert(5, include1, "include1");
@@ -235,6 +238,11 @@ int main() {
 // [175] 允许括号内的表达式作为宏参数
 #define M8(x,y) x*y
   assert(12, M8((2,3), 4), "M8((2,3), 4)");
+
+// [176] 宏中终结符只展开一次
+#define dbl(x) M10(x) * x
+#define M10(x) dbl(x) + 3
+  assert(10, dbl(2), "dbl(2)");
 
   // [159] 支持空指示
   printf("OK\n");
