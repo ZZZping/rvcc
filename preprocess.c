@@ -527,6 +527,8 @@ static Token *subst(Token *Tok, MacroArg *Args) {
     // before they are substituted into a macro body.
     if (Arg) {
       Token *T = preprocess2(Arg->Tok);
+      T->AtBOL = Tok->AtBOL;
+      T->HasSpace = Tok->HasSpace;
       for (; T->Kind != TK_EOF; T = T->Next)
         Cur = Cur->Next = copyToken(T);
       Tok = Tok->Next;
@@ -558,6 +560,8 @@ static bool expandMacro(Token **Rest, Token *Tok) {
     Hideset *Hs = hidesetUnion(Tok->Hideset, newHideset(M->Name));
     Token *Body = addHideset(M->Body, Hs);
     *Rest = append(Body, Tok->Next);
+    (*Rest)->AtBOL = Tok->AtBOL;
+    (*Rest)->HasSpace = Tok->HasSpace;
     return true;
   }
 
@@ -582,6 +586,8 @@ static bool expandMacro(Token **Rest, Token *Tok) {
   Token *Body = subst(M->Body, Args);
   Body = addHideset(Body, Hs);
   *Rest = append(Body, Tok->Next);
+  (*Rest)->AtBOL = MacroToken->AtBOL;
+  (*Rest)->HasSpace = MacroToken->HasSpace;
   return true;
 }
 
