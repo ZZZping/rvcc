@@ -656,7 +656,7 @@ static char *readIncludeFilename(Token **Rest, Token *Tok, bool *IsDquote) {
     // token, and we don't want to interpret any escape sequences in it.
     // For example, "\f" in "C:\foo" is not a formfeed character but
     // just two non-control characters, backslash and f.
-    // So we don't want to use token->str.
+    // So we don't want to use token->Str.
     *IsDquote = true;
     *Rest = skipLine(Tok->Next);
     return strndup(Tok->Loc + 1, Tok->Len - 2);
@@ -900,6 +900,39 @@ static void initMacros(void) {
   addBuiltin("__LINE__", lineMacro);
 }
 
+// Concatenate adjacent string literals into a single string literal
+// as per the C spec.
+static void joinAdjacentStringLiterals(Token *Tok1) {
+  while (Tok1->Kind != TK_EOF) {
+    if (Tok1->Kind != TK_STR || Tok1->Next->Kind != TK_STR) {
+      Tok1 = Tok1->Next;
+      continue;
+    }
+
+    Token *Tok2 = Tok1->Next;
+    while (Tok2->Kind == TK_STR)
+      Tok2 = Tok2->Next;
+
+    int Len = Tok1->Ty->ArrayLen;
+    for (Token *t = Tok1->Next; t != Tok2; t = t->Next)
+      Len = Len + t->Ty->ArrayLen - 1;
+
+    char *Buf = calloc(Tok1->Ty->Base->Size, Len);
+
+    int I = 0;
+    for (Token *t = Tok1; t != Tok2; t = t->Next) {
+      memcpy(Buf + I, t->Str, t->Ty->Size);
+      I = I + t->Ty->Size - t->Ty->Base->Size;
+    }
+
+    *Tok1 = *copyToken(Tok1);
+    Tok1->Ty = arrayOf(Tok1->Ty->Base, Len);
+    Tok1->Str = Buf;
+    Tok1->Next = Tok2;
+    Tok1 = Tok2;
+  }
+}
+
 // 预处理器入口函数
 Token *preprocess(Token *Tok) {
   initMacros();
@@ -907,5 +940,6 @@ Token *preprocess(Token *Tok) {
   if (CondInclude)
     errorTok(CondInclude->Tok, "unterminated conditional directive");
   convertKeywords(Tok);
+  joinAdjacentStringLiterals(Tok);
   return Tok;
 }
