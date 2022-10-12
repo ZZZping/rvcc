@@ -640,11 +640,41 @@ File *newFile(char *Name, int FileNo, char *Contents) {
   return File;
 }
 
+// Removes backslashes followed by a newline.
+static void removeBackslashNewline(char *P) {
+  int I = 0, J = 0;
+
+  // We want to keep the number of newline characters so that
+  // the logical line number matches the physical one.
+  // This counter maintain the number of newlines we have removed.
+  int N = 0;
+
+  while (P[I]) {
+    if (P[I] == '\\' && P[I + 1] == '\n') {
+      I += 2;
+      N++;
+    } else if (P[I] == '\n') {
+      P[J++] = P[I++];
+      for (; N > 0; N--)
+        P[J++] = '\n';
+    } else {
+      P[J++] = P[I++];
+    }
+  }
+
+  for (; N > 0; N--)
+    P[J++] = '\n';
+  P[J] = '\0';
+}
+
 Token *tokenizeFile(char *Path) {
   char *P = readFile(Path);
   if (!P)
     return NULL;
 
+  removeBackslashNewline(P);
+
+  // Save the filename for assembler .file directive.
   static int FileNo;
   File *File = newFile(Path, FileNo + 1, P);
 
