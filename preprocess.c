@@ -23,11 +23,25 @@
 
 #include "rvcc.h"
 
+typedef struct MacroParam MacroParam;
+struct MacroParam {
+  MacroParam *Next;
+  char *Name;
+};
+
+typedef struct MacroArg MacroArg;
+struct MacroArg {
+  MacroArg *Next;
+  char *Name;
+  Token *Tok;
+};
+
 typedef struct Macro Macro;
 struct Macro {
   Macro *Next;
   char *Name;
   bool IsObjlike; // Object-like or function-like
+  MacroParam *Params;
   Token *Body;
   bool Deleted;
 };
@@ -221,6 +235,25 @@ static Macro *addMacro(char *Name, bool IsObjlike, Token *Body) {
   return M;
 }
 
+static MacroParam *readMacroParams(Token **Rest, Token *Tok) {
+  MacroParam Head = {};
+  MacroParam *Cur = &Head;
+
+  while (!equal(Tok, ")")) {
+    if (Cur != &Head)
+      Tok = skip(Tok, ",");
+
+    if (Tok->Kind != TK_IDENT)
+      errorTok(Tok, "expected an identifier");
+    MacroParam *M = calloc(1, sizeof(MacroParam));
+    M->Name = strndup(Tok->Loc, Tok->Len);
+    Cur = Cur->Next = M;
+    Tok = Tok->Next;
+  }
+  *Rest = Tok->Next;
+  return Head.Next;
+}
+
 static void readMacroDefinition(Token **Rest, Token *Tok) {
   if (Tok->Kind != TK_IDENT)
     errorTok(Tok, "macro name must be an identifier");
@@ -229,12 +262,88 @@ static void readMacroDefinition(Token **Rest, Token *Tok) {
 
   if (!Tok->HasSpace && equal(Tok, "(")) {
     // Function-like macro
-    Tok = skip(Tok->Next, ")");
-    addMacro(Name, false, copyLine(Rest, Tok));
+    MacroParam *Params = readMacroParams(&Tok, Tok->Next);
+    Macro *M = addMacro(Name, false, copyLine(Rest, Tok));
+    M->Params = Params;
   } else {
     // Object-like macro
     addMacro(Name, true, copyLine(Rest, Tok));
   }
+}
+
+static MacroArg *readMacroArgOne(Token **Rest, Token *Tok) {
+  Token Head = {};
+  Token *Cur = &Head;
+
+  while (!equal(Tok, ",") && !equal(Tok, ")")) {
+    if (Tok->Kind == TK_EOF)
+      errorTok(Tok, "premature end of input");
+    Cur = Cur->Next = copyToken(Tok);
+    Tok = Tok->Next;
+  }
+
+  Cur->Next = newEOF(Tok);
+
+  MacroArg *Arg = calloc(1, sizeof(MacroArg));
+  Arg->Tok = Head.Next;
+  *Rest = Tok;
+  return Arg;
+}
+
+static MacroArg *readMacroArgs(Token **Rest, Token *Tok, MacroParam *Params) {
+  Token *Start = Tok;
+  Tok = Tok->Next->Next;
+
+  MacroArg Head = {};
+  MacroArg *Cur = &Head;
+
+  MacroParam *PP = Params;
+  for (; PP; PP = PP->Next) {
+    if (Cur != &Head)
+      Tok = skip(Tok, ",");
+    Cur = Cur->Next = readMacroArgOne(&Tok, Tok);
+    Cur->Name = PP->Name;
+  }
+
+  if (PP)
+    errorTok(Start, "too many arguments");
+  *Rest = skip(Tok, ")");
+  return Head.Next;
+}
+
+static MacroArg *findArg(MacroArg *Args, Token *Tok) {
+  for (MacroArg *AP = Args; AP; AP = AP->Next)
+    if (Tok->Len == strlen(AP->Name) && !strncmp(Tok->Loc, AP->Name, Tok->Len))
+      return AP;
+  return NULL;
+}
+
+// Replace func-like macro parameters with given arguments.
+static Token *subst(Token *Tok, MacroArg *Args) {
+  Token Head = {};
+  Token *Cur = &Head;
+
+  while (Tok->Kind != TK_EOF) {
+    MacroArg *Arg = findArg(Args, Tok);
+
+    // Handle a macro token. Macro arguments are completely macro-expanded
+    // before they are substituted into a macro body.
+    if (Arg) {
+      Token *T = preprocess2(Arg->Tok);
+      for (; T->Kind != TK_EOF; T = T->Next)
+        Cur = Cur->Next = copyToken(T);
+      Tok = Tok->Next;
+      continue;
+    }
+
+    // Handle a non-macro token.
+    Cur = Cur->Next = copyToken(Tok);
+    Tok = Tok->Next;
+    continue;
+  }
+
+  Cur->Next = Tok;
+  return Head.Next;
 }
 
 // If tok is a macro, expand it and return true.
@@ -261,8 +370,8 @@ static bool expandMacro(Token **Rest, Token *Tok) {
     return false;
 
   // Function-like macro application
-  Tok = skip(Tok->Next->Next, ")");
-  *Rest = append(M->Body, Tok);
+  MacroArg *Args = readMacroArgs(&Tok, Tok, M->Params);
+  *Rest = append(subst(M->Body, Args), Tok);
   return true;
 }
 
