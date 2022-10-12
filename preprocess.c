@@ -45,6 +45,7 @@ struct Macro {
   char *Name;
   bool IsObjlike; // Object-like or function-like
   MacroParam *Params;
+  bool IsVariadic;
   Token *Body;
   bool Deleted;
   macroHandlerFn *Handler;
@@ -327,13 +328,19 @@ static Macro *addMacro(char *Name, bool IsObjlike, Token *Body) {
   return M;
 }
 
-static MacroParam *readMacroParams(Token **Rest, Token *Tok) {
+static MacroParam *readMacroParams(Token **Rest, Token *Tok, bool *IsVariadic) {
   MacroParam Head = {};
   MacroParam *Cur = &Head;
 
   while (!equal(Tok, ")")) {
     if (Cur != &Head)
       Tok = skip(Tok, ",");
+
+    if (equal(Tok, "...")) {
+      *IsVariadic = true;
+      *Rest = skip(Tok->Next, ")");
+      return Head.Next;
+    }
 
     if (Tok->Kind != TK_IDENT)
       errorTok(Tok, "expected an identifier");
@@ -354,21 +361,29 @@ static void readMacroDefinition(Token **Rest, Token *Tok) {
 
   if (!Tok->HasSpace && equal(Tok, "(")) {
     // Function-like macro
-    MacroParam *Params = readMacroParams(&Tok, Tok->Next);
+    bool IsVariadic = false;
+    MacroParam *Params = readMacroParams(&Tok, Tok->Next, &IsVariadic);
+
     Macro *M = addMacro(Name, false, copyLine(Rest, Tok));
     M->Params = Params;
+    M->IsVariadic = IsVariadic;
   } else {
     // Object-like macro
     addMacro(Name, true, copyLine(Rest, Tok));
   }
 }
 
-static MacroArg *readMacroArgOne(Token **Rest, Token *Tok) {
+static MacroArg *readMacroArgOne(Token **Rest, Token *Tok, bool ReadRest) {
   Token Head = {};
   Token *Cur = &Head;
   int Level = 0;
 
-  while (Level > 0 || !equal(Tok, ",") && !equal(Tok, ")")) {
+  while (true) {
+    if (Level == 0 && equal(Tok, ")"))
+      break;
+    if (Level == 0 && !ReadRest && equal(Tok, ","))
+      break;
+
     if (Tok->Kind == TK_EOF)
       errorTok(Tok, "premature end of input");
 
@@ -389,7 +404,8 @@ static MacroArg *readMacroArgOne(Token **Rest, Token *Tok) {
   return Arg;
 }
 
-static MacroArg *readMacroArgs(Token **Rest, Token *Tok, MacroParam *Params) {
+static MacroArg *readMacroArgs(Token **Rest, Token *Tok, MacroParam *Params,
+                               bool IsVariadic) {
   Token *Start = Tok;
   Tok = Tok->Next->Next;
 
@@ -400,12 +416,26 @@ static MacroArg *readMacroArgs(Token **Rest, Token *Tok, MacroParam *Params) {
   for (; PP; PP = PP->Next) {
     if (Cur != &Head)
       Tok = skip(Tok, ",");
-    Cur = Cur->Next = readMacroArgOne(&Tok, Tok);
+    Cur = Cur->Next = readMacroArgOne(&Tok, Tok, false);
     Cur->Name = PP->Name;
   }
 
-  if (PP)
+  if (IsVariadic) {
+    MacroArg *Arg;
+    if (equal(Tok, ")")) {
+      Arg = calloc(1, sizeof(MacroArg));
+      Arg->Tok = newEOF(Tok);
+    } else {
+      if (PP != Params)
+        Tok = skip(Tok, ",");
+      Arg = readMacroArgOne(&Tok, Tok, true);
+    }
+    Arg->Name = "__VA_ARGS__";
+    Cur = Cur->Next = Arg;
+  } else if (PP) {
     errorTok(Start, "too many arguments");
+  }
+
   skip(Tok, ")");
   *Rest = Tok;
   return Head.Next;
@@ -584,7 +614,7 @@ static bool expandMacro(Token **Rest, Token *Tok) {
 
   // Function-like macro application
   Token *MacroToken = Tok;
-  MacroArg *Args = readMacroArgs(&Tok, Tok, M->Params);
+  MacroArg *Args = readMacroArgs(&Tok, Tok, M->Params, M->IsVariadic);
   Token *Rparen = Tok;
 
   // Tokens that consist a func-like macro invocation may have different
