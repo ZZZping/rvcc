@@ -176,6 +176,7 @@ static Node *CurrentSwitch;
 //         | "sizeof" unary
 //         | "_Alignof" "(" typeName ")"
 //         | "_Alignof" unary
+//         | "__builtin_reg_class" "(" typeName ")"
 //         | ident
 //         | str
 //         | num
@@ -2700,6 +2701,7 @@ static Node *funCall(Token **Rest, Token *Tok, Node *Fn) {
 //         | "sizeof" unary
 //         | "_Alignof" "(" typeName ")"
 //         | "_Alignof" unary
+//         | "__builtin_reg_class" "(" typeName ")"
 //         | ident
 //         | str
 //         | num
@@ -2752,6 +2754,19 @@ static Node *primary(Token **Rest, Token *Tok) {
     Node *Nd = unary(Rest, Tok->Next);
     addType(Nd);
     return newULong(Nd->Ty->Align, Tok);
+  }
+
+  // "__builtin_reg_class" "(" typeName ")"
+  if (equal(Tok, "__builtin_reg_class")) {
+    Tok = skip(Tok->Next, "(");
+    Type *Ty = typename(&Tok, Tok);
+    *Rest = skip(Tok, ")");
+
+    if (isInteger(Ty) || Ty->Kind == TY_PTR)
+      return newNum(0, Start);
+    if (isFloNum(Ty))
+      return newNum(1, Start);
+    return newNum(2, Start);
   }
 
   // ident
