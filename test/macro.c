@@ -4,6 +4,13 @@
 // [160] 支持 #include "..."
 #include "include1.h"
 
+// [189] 支持 __FILE__ 和 __LINE__
+char *main_filename1 = __FILE__;
+int main_line1 = __LINE__;
+#define LINE() __LINE__
+int main_line2 = LINE();
+
+// [159] 支持空指示
 #
 
 /* */ #
@@ -345,6 +352,13 @@ int main() {
   ASSERT(4, foo);
 
 #undef foo
+
+  // [189] 支持 __FILE__ 和 __LINE__
+  ASSERT(0, strcmp(main_filename1, "test/macro.c"));
+  ASSERT(9, main_line1);
+  ASSERT(11, main_line2);
+  ASSERT(0, strcmp(include1_filename, "test/include1.h"));
+  ASSERT(5, include1_line);
 
   // [159] 支持空指示
   printf("OK\n");

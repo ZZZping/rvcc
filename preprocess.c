@@ -37,6 +37,8 @@ struct MacroArg {
   Token *Tok;
 };
 
+typedef Token *macroHandlerFn(Token *);
+
 typedef struct Macro Macro;
 struct Macro {
   Macro *Next;
@@ -45,6 +47,7 @@ struct Macro {
   MacroParam *Params;
   Token *Body;
   bool Deleted;
+  macroHandlerFn *Handler;
 };
 
 // `#if` can be nested, so we use a stack to manage nested `#if`s.
@@ -555,10 +558,19 @@ static bool expandMacro(Token **Rest, Token *Tok) {
   if (!M)
     return false;
 
+  // Built-in dynamic macro application such as __LINE__
+  if (M->Handler) {
+    *Rest = M->Handler(Tok);
+    (*Rest)->Next = Tok->Next;
+    return true;
+  }
+
   // Object-like macro application
   if (M->IsObjlike) {
     Hideset *Hs = hidesetUnion(Tok->Hideset, newHideset(M->Name));
     Token *Body = addHideset(M->Body, Hs);
+    for (Token *T = Body; T->Kind != TK_EOF; T = T->Next)
+      T->Origin = Tok;
     *Rest = append(Body, Tok->Next);
     (*Rest)->AtBOL = Tok->AtBOL;
     (*Rest)->HasSpace = Tok->HasSpace;
@@ -585,6 +597,8 @@ static bool expandMacro(Token **Rest, Token *Tok) {
 
   Token *Body = subst(M->Body, Args);
   Body = addHideset(Body, Hs);
+  for (Token *T = Body; T->Kind != TK_EOF; T = T->Next)
+    T->Origin = MacroToken;
   *Rest = append(Body, Tok->Next);
   (*Rest)->AtBOL = MacroToken->AtBOL;
   (*Rest)->HasSpace = MacroToken->HasSpace;
@@ -785,6 +799,24 @@ static void defineMacro(char *Name, char *Buf) {
   addMacro(Name, true, Tok);
 }
 
+static Macro *addBuiltin(char *Name, macroHandlerFn *Fn) {
+  Macro *M = addMacro(Name, true, NULL);
+  M->Handler = Fn;
+  return M;
+}
+
+static Token *fileMacro(Token *Tmpl) {
+  while (Tmpl->Origin)
+    Tmpl = Tmpl->Origin;
+  return newStrToken(Tmpl->File->Name, Tmpl);
+}
+
+static Token *lineMacro(Token *Tmpl) {
+  while (Tmpl->Origin)
+    Tmpl = Tmpl->Origin;
+  return newNumToken(Tmpl->LineNo, Tmpl);
+}
+
 static void initMacros(void) {
   // Define predefined macros
   defineMacro("_LP64", "1");
@@ -833,6 +865,9 @@ static void initMacros(void) {
   defineMacro("__riscv_div", "1");
   defineMacro("__riscv_float_abi_double", "1");
   defineMacro("__riscv_flen", "64");
+
+  addBuiltin("__FILE__", fileMacro);
+  addBuiltin("__LINE__", lineMacro);
 }
 
 // 预处理器入口函数
