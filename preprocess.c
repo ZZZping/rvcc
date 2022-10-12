@@ -275,6 +275,18 @@ static long evalConstExpr(Token **Rest, Token *Tok) {
   if (Expr->Kind == TK_EOF)
     errorTok(Start, "no expression");
 
+  // [https://www.sigbus.info/n1570#6.10.1p4] The standard requires
+  // we replace remaining non-macro identifiers with "0" before
+  // evaluating a constant expression. For example, `#if foo` is
+  // equivalent to `#if 0` if foo is not defined.
+  for (Token *T = Expr; T->Kind != TK_EOF; T = T->Next) {
+    if (T->Kind == TK_IDENT) {
+      Token *Next = T->Next;
+      *T = *newNumToken(0, T);
+      T->Next = Next;
+    }
+  }
+
   Token *Rest2;
   long Val = constExpr(&Rest2, Expr);
   if (Rest2->Kind != TK_EOF)

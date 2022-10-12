@@ -304,6 +304,14 @@ int main() {
 #endif
   ASSERT(4, m);
 
+// [181] 在常量表达式中替代遗留的标志符为0
+#if no_such_symbol == 0
+  m = 5;
+#else
+  m = 6;
+#endif
+  ASSERT(5, m);
+
   // [159] 支持空指示
   printf("OK\n");
   return 0;
