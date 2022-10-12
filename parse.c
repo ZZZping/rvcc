@@ -2883,6 +2883,13 @@ static Token *function(Token *Tok, Type *BaseTy, VarAttr *Attr) {
   Fn->Params = Locals;
 
   Tok = skip(Tok, "{");
+
+  // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
+  // automatically defined as a local variable containing the
+  // current function name.
+  pushScope("__func__")->Var =
+      newStringLiteral(Fn->Name, arrayOf(TyChar, strlen(Fn->Name) + 1));
+
   // 函数体存储语句的AST，Locals存储变量
   Fn->Body = compoundStmt(&Tok, Tok);
   Fn->Locals = Locals;
