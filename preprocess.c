@@ -766,6 +766,9 @@ static Token *preprocess2(Token *Tok) {
       continue;
     }
 
+    if (equal(Tok, "error"))
+      errorTok(Tok, "error");
+
     // `#`-only line is legal. It's called a null directive.
     if (Tok->AtBOL)
       continue;
