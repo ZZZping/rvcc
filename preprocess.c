@@ -416,10 +416,10 @@ static MacroArg *findArg(MacroArg *Args, Token *Tok) {
 }
 
 // Concatenates all tokens in `tok` and returns a new string.
-static char *joinTokens(Token *Tok) {
+static char *joinTokens(Token *Tok, Token *End) {
   // Compute the length of the resulting token.
   int Len = 1;
-  for (Token *T = Tok; T && T->Kind != TK_EOF; T = T->Next) {
+  for (Token *T = Tok; T != End && T->Kind != TK_EOF; T = T->Next) {
     if (T != Tok && T->HasSpace)
       Len++;
     Len += T->Len;
@@ -429,7 +429,7 @@ static char *joinTokens(Token *Tok) {
 
   // Copy token texts.
   int Pos = 0;
-  for (Token *T = Tok; T && T->Kind != TK_EOF; T = T->Next) {
+  for (Token *T = Tok; T != End && T->Kind != TK_EOF; T = T->Next) {
     if (T != Tok && T->HasSpace)
       Buf[Pos++] = ' ';
     strncpy(Buf + Pos, T->Loc, T->Len);
@@ -445,7 +445,7 @@ static Token *stringize(Token *Hash, Token *Arg) {
   // Create a new string token. We need to set some value to its
   // source location for error reporting function, so we use a macro
   // name token as a template.
-  char *S = joinTokens(Arg);
+  char *S = joinTokens(Arg, NULL);
   return newStrToken(S, Hash);
 }
 
@@ -591,6 +591,55 @@ static bool expandMacro(Token **Rest, Token *Tok) {
   return true;
 }
 
+// Read an #include argument.
+static char *readIncludeFilename(Token **Rest, Token *Tok, bool *IsDquote) {
+  // Pattern 1: #include "foo.h"
+  if (Tok->Kind == TK_STR) {
+    // A double-quoted filename for #include is a special kind of
+    // token, and we don't want to interpret any escape sequences in it.
+    // For example, "\f" in "C:\foo" is not a formfeed character but
+    // just two non-control characters, backslash and f.
+    // So we don't want to use token->str.
+    *IsDquote = true;
+    *Rest = skipLine(Tok->Next);
+    return strndup(Tok->Loc + 1, Tok->Len - 2);
+  }
+
+  // Pattern 2: #include <foo.h>
+  if (equal(Tok, "<")) {
+    // Reconstruct a filename from a sequence of tokens between
+    // "<" and ">".
+    Token *Start = Tok;
+
+    // Find closing ">".
+    for (; !equal(Tok, ">"); Tok = Tok->Next)
+      if (Tok->AtBOL || Tok->Kind == TK_EOF)
+        errorTok(Tok, "expected '>'");
+
+    *IsDquote = false;
+    *Rest = skipLine(Tok->Next);
+    return joinTokens(Start->Next, Tok);
+  }
+
+  // Pattern 3: #include FOO
+  // In this case FOO must be macro-expanded to either
+  // a single string token or a sequence of "<" ... ">".
+  if (Tok->Kind == TK_IDENT) {
+    Token *Tok2 = preprocess2(copyLine(Rest, Tok));
+    return readIncludeFilename(&Tok2, Tok2, IsDquote);
+  }
+
+  errorTok(Tok, "expected a filename");
+  return NULL;
+}
+
+static Token *includeFile(Token *Tok, char *Path, Token *FilenameTok) {
+  Token *Tok2 = tokenizeFile(Path);
+  if (!Tok2)
+    errorTok(FilenameTok, "%s: cannot open file: %s", Path, strerror(errno));
+  return append(Tok2, Tok);
+}
+
 // Visit all tokens in `tok` while evaluating preprocessing
 // macros and directives.
 static Token *preprocess2(Token *Tok) {
@@ -613,22 +662,20 @@ static Token *preprocess2(Token *Tok) {
     Tok = Tok->Next;
 
     if (equal(Tok, "include")) {
-      Tok = Tok->Next;
+      bool IsDquote;
+      char *Filename = readIncludeFilename(&Tok, Tok->Next, &IsDquote);
 
-      if (Tok->Kind != TK_STR)
-        errorTok(Tok, "expected a filename");
+      if (Filename[0] != '/') {
+        char *Path =
+            format("%s/%s", dirname(strdup(Start->File->Name)), Filename);
+        if (fileExists(Path)) {
+          Tok = includeFile(Tok, Path, Start->Next->Next);
+          continue;
+        }
+      }
 
-      char *Path;
-      if (Tok->Str[0] == '/')
-        Path = Tok->Str;
-      else
-        Path = format("%s/%s", dirname(strdup(Tok->File->Name)), Tok->Str);
-
-      Token *Tok2 = tokenizeFile(Path);
-      if (!Tok2)
-        errorTok(Tok, "%s", strerror(errno));
-      Tok = skipLine(Tok->Next);
-      Tok = append(Tok2, Tok);
+      // TODO: Search a file from the include paths.
+      Tok = includeFile(Tok, Filename, Start->Next->Next);
       continue;
     }
 
