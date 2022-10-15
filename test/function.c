@@ -142,6 +142,22 @@ float add10_float(float x1, float x2, float x3, float x4, float x5, float x6,
 double add10_double(double x1, double x2, double x3, double x4, double x5,
                     double x6, double x7, double x8, double x9, double x10);
 
+// [199] 支持栈传递形参
+int many_args1(int a, int b, int c, int d, int e, int f, int g, int h) {
+  return g / h;
+}
+
+double many_args2(double a, double b, double c, double d, double e, double f,
+                  double g, double h, double i, double j) {
+  return i / j;
+}
+
+int many_args3(int a, double b, int c, int d, double e, int f, double g, int h,
+               double i, double j, double k, double l, double m, int n, int o,
+               double p) {
+  return o / p;
+}
+
 int main() {
   // [25] 支持零参函数定义
   ASSERT(3, ret3());
@@ -256,6 +272,11 @@ int main() {
            sprintf(buf, "%d %.1f %.1f %.1f %d %d", 1, 1.0, 1.0, 1.0, 1, 1);
            strcmp("1 1.0 1.0 1.0 1 1", buf);
          }));
+
+  // [199] 支持栈传递形参
+  ASSERT(4, many_args1(1, 2, 3, 4, 5, 6, 40, 10));
+  ASSERT(4, many_args2(1, 2, 3, 4, 5, 6, 7, 8, 40, 10));
+  ASSERT(8, many_args3(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 80, 10));
 
   printf("OK\n");
   return 0;
