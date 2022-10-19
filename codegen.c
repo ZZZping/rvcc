@@ -181,6 +181,24 @@ static void store(Type *Ty) {
     printLn("  sd a0, 0(a1)");
 };
 
+// 用于结构体的成员变量的传参
+void loadReg(char *Reg, int Offset, Type *Ty) {
+  printLn("  li %s, 0", Reg);
+
+  // 添加无符号类型的后缀u
+  char *Suffix = Ty->IsUnsigned ? "u" : "";
+
+  printLn("  # 读取%d(a0)中存放的地址，得到的值存入%s", Offset, Reg);
+  if (Ty->Size == 1)
+    printLn("  lb%s %s, %d(a0)", Suffix, Reg, Offset);
+  else if (Ty->Size == 2)
+    printLn("  lh%s %s, %d(a0)", Suffix, Reg, Offset);
+  else if (Ty->Size == 4)
+    printLn("  lw%s %s, %d(a0)", Suffix, Reg, Offset);
+  else
+    printLn("  ld %s, %d(a0)", Reg, Offset);
+}
+
 // 与0进行比较，不等于0则置1
 static void notZero(Type *Ty) {
   switch (Ty->Kind) {
@@ -366,6 +384,100 @@ static void cast(Type *From, Type *To) {
   }
 }
 
+// 解决带浮点的结构体（成员数<=2）
+static void pushStructF(Type *Ty, int N) {
+  if (N == 1) {
+    // 只有一个浮点成员变量
+    printLn("  # struct使用1个寄存器处理浮点");
+    printLn("  addi sp, sp, -8");
+
+    Member *Mem = Ty->Mems;
+    loadReg("t0", Mem->Offset, Mem->Ty);
+
+    printLn("  sd t0, 0(sp)");
+    Depth += 1;
+  } else {
+    // 有一个或两个浮点成员变量
+    printLn("  # struct使用2个寄存器处理浮点");
+    printLn("  addi sp, sp, -16");
+
+    // 第一个成员变量
+    Member *Mem = Ty->Mems;
+    loadReg("t0", Mem->Offset, Mem->Ty);
+    // 第二个成员变量
+    Mem = Mem->Next;
+    loadReg("t1", Mem->Offset, Mem->Ty);
+
+    printLn("  sd t1, 8(sp)");
+    printLn("  sd t0, 0(sp)");
+    Depth += 2;
+  }
+}
+
+static void pushStruct(Type *Ty) {
+  // 结构体小于16字节使用寄存器传递
+  if (Ty->Size <= 16) {
+    if (Ty->Size <= 8) {
+      // 小于等于8字节，使用一个寄存器
+      printLn("  # struct使用1个寄存器");
+      printLn("  addi sp, sp, -8");
+    } else {
+      // 大于8字节，小于等于16字节，使用一个寄存器
+      printLn("  # struct使用2个寄存器");
+      printLn("  addi sp, sp, -16");
+    }
+
+    // 在寄存器内的偏移量
+    int OffsetBitInReg = 0;
+    // 寄存器内的最大的对齐量
+    int MaxAlign = 8;
+    // 当前存放值的寄存器
+    char *Reg = "t0";
+    printLn("  # t0寄存器清0，启用第一个寄存器");
+    printLn("  li t0, 0");
+    for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+      unsigned MemBitSize = Mem->Ty->Size * 8;
+      printLn("  # ***************%s*%d**************", Reg, MemBitSize);
+      // 将偏移量对齐到类型的大小
+      MaxAlign = (MaxAlign > MemBitSize) ? MaxAlign : MemBitSize;
+      OffsetBitInReg = alignTo(OffsetBitInReg, MaxAlign);
+      // 超过一个寄存器尺寸的时候，启用第二个寄存器
+      if (OffsetBitInReg + MemBitSize > 64) {
+        Reg = "t1";
+        printLn("  # t1寄存器清0，启用第二个寄存器");
+        printLn("  li t1, 0");
+        OffsetBitInReg = 0;
+        MaxAlign = 8;
+      }
+
+      // 将成员变量值加载到t2，然后左移到偏移的位置，然后加入a0中
+      printLn("  # 将成员变量加载到寄存器中的正确位置");
+      loadReg("t2", Mem->Offset, Mem->Ty);
+      printLn("  slli t2, t2, %d", OffsetBitInReg);
+      printLn("  add %s, %s, t2", Reg, Reg);
+
+      // 为下一个成员变量计算偏移量
+      OffsetBitInReg += MemBitSize;
+    }
+
+    if (Ty->Size <= 8) {
+      printLn("  # 压栈一个寄存器来传递struct");
+      printLn("  sd t0, 0(sp)");
+      Depth += 1;
+    } else {
+      printLn("  # 压栈两个寄存器来传递struct");
+      printLn("  sd t1, 8(sp)");
+      printLn("  sd t0, 0(sp)");
+      Depth += 2;
+    }
+  } else {
+    printLn("  # 使用地址传递大于16字节的结构体");
+    printLn("  addi sp, sp, -8");
+    printLn("  sd a0, 0(sp)");
+    Depth += 1;
+  }
+}
+
 // 计算表达式后压栈
 static void pushArgs2(Node *Args) {
   if (!Args)
@@ -377,10 +489,33 @@ static void pushArgs2(Node *Args) {
   printLn("\n  # ↓对表达式进行计算，然后压栈↓");
   genExpr(Args);
 
-  if (isFloNum(Args->Ty)) {
+  switch (Args->Ty->Kind) {
+  case TY_STRUCT:
+  case TY_UNION: {
+    // 计算结构体成员变量数
+    int N = 0;
+    // 判断是否成员变量为浮点数
+    bool HasFloat = false;
+    for (Member *Mem = Args->Ty->Mems; Mem; Mem = Mem->Next) {
+      N++;
+      if (isFloNum(Mem->Ty))
+        HasFloat = true;
+    }
+
+    if (N <= 2 && HasFloat)
+      // 两个以内带浮点结构体特殊处理
+      pushStructF(Args->Ty, N);
+    else
+      // 其他情况统一处理
+      pushStruct(Args->Ty);
+    break;
+  }
+  case TY_FLOAT:
+  case TY_DOUBLE:
     printLn("  # 对浮点参数表达式进行计算后压栈");
     pushF();
-  } else {
+    break;
+  default:
     printLn("  # 对整型参数表达式进行计算后压栈");
     push();
   }
@@ -392,7 +527,16 @@ static int pushArgs(Node *Args) {
   int Stack = 0, GP = 0, FP = 0;
 
   for (Node *Arg = Args; Arg; Arg = Arg->Next) {
-    if (isFloNum(Arg->Ty)) {
+    Type *Ty = Arg->Ty;
+
+    switch (Ty->Kind) {
+    case TY_STRUCT:
+    case TY_UNION:
+      // TODO：解决寄存器传递struct时候GP、FP不够用的情况
+      // TODO：解决两个寄存器传递时，只剩一个GP可用时，后一半用栈传递的情况
+      break;
+    case TY_FLOAT:
+    case TY_DOUBLE:
       // 浮点优先使用FP，而后是GP，最后是栈传递
       if (FP >= FP_MAX && GP >= GP_MAX) {
         printLn("  # %f值通过栈传递", Arg->FVal);
@@ -405,7 +549,8 @@ static int pushArgs(Node *Args) {
         printLn("  # %f值通过a%d传递", Arg->FVal, GP);
         GP++;
       }
-    } else {
+      break;
+    default:
       // 整型优先使用GP，最后是栈传递
       if (GP >= GP_MAX) {
         printLn("  # %d值通过栈传递", Arg->Val);
@@ -638,7 +783,60 @@ static void genExpr(Node *Nd) {
       }
 
       CurArg = CurArg->Next;
-      if (isFloNum(Arg->Ty)) {
+      Type *Ty = Arg->Ty;
+
+      switch (Ty->Kind) {
+      case TY_STRUCT:
+      case TY_UNION: {
+        // 如果成员变量小于2个，并且包含浮点成员变量特殊处理
+        int N = 0;
+        bool HasFloat = false;
+        for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+          N++;
+          if (isFloNum(Mem->Ty))
+            HasFloat = true;
+        }
+
+        // 只有一个浮点成员变量
+        if (N == 1 && HasFloat) {
+          popF(FP++);
+          break;
+        }
+
+        // 有一个或两个浮点成员变量
+        if (N == 2 && HasFloat) {
+          for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+            if (Mem->Ty->Kind == TY_FLOAT) {
+              // 解决struct传带float两参时，float值为负数的问题
+              printLn("  # 弹栈，将栈顶的值存入fa%d", FP);
+              printLn("  flw fa%d, 0(sp)", FP++);
+              printLn("  addi sp, sp, 8");
+              Depth--;
+            } else if (Mem->Ty->Kind == TY_DOUBLE) {
+              popF(FP++);
+            } else {
+              pop(GP++);
+            }
+          }
+          break;
+        }
+
+        // 其他全部通过整型寄存器的情况
+        if (Ty->Size <= 8) {
+          // struct使用一个寄存器
+          pop(GP++);
+        } else if (Ty->Size <= 16) {
+          // struct使用二个寄存器
+          pop(GP++);
+          pop(GP++);
+        } else {
+          // struct使用地址传递
+          pop(GP++);
+        }
+        break;
+      }
+      case TY_FLOAT:
+      case TY_DOUBLE:
         if (FP < FP_MAX) {
           printLn("  # fa%d传递浮点参数", FP);
           popF(FP++);
@@ -646,7 +844,8 @@ static void genExpr(Node *Nd) {
           printLn("  # a%d传递浮点参数", GP);
           pop(GP++);
         }
-      } else {
+        break;
+      default:
         if (GP < GP_MAX) {
           printLn("  # a%d传递整型参数", GP);
           pop(GP++);

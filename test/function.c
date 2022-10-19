@@ -158,6 +158,83 @@ int many_args3(int a, double b, int c, int d, double e, int f, double g, int h,
   return o / p;
 }
 
+// [200] 支持结构体实参
+// 单个成员变量的结构体
+typedef struct {_Bool a;} StTy1_1;
+typedef struct {short a;} StTy1_2;
+typedef struct {unsigned a;} StTy1_3;
+typedef struct {long a;} StTy1_4;
+
+int struct_type_1_1_test(StTy1_1 x);
+int struct_type_1_2_test(StTy1_2 x);
+int struct_type_1_3_test(StTy1_3 x);
+int struct_type_1_4_test(StTy1_4 x);
+
+// 使用一个寄存器的结构体
+typedef struct {char a;char b;char c;char d;char e;char f;char g;char h;} StTy2_1;
+typedef struct {int a;int b;} StTy2_2;
+typedef struct {unsigned a;unsigned b;} StTy2_3;
+
+int struct_type_2_1_test(StTy2_1 x, int n);
+int struct_type_2_2_test(StTy2_2 x, int n);
+int struct_type_2_3_test(StTy2_3 x, int n);
+
+typedef struct {char a;char b;char c;char d;int e;} StTy3_1;
+typedef struct {char a;char b;char c;int d;} StTy3_2;
+typedef struct {char a;short b;char c;short d;} StTy3_3;
+
+int struct_type_3_1_test(StTy3_1 x, int n);
+int struct_type_3_2_test(StTy3_2 x, int n);
+int struct_type_3_3_test(StTy3_3 x, int n);
+
+// 使用两个寄存器的结构体
+typedef struct {char a;char b;char c;char d;int e;char f;int g;} StTy4_1;
+typedef struct {char a;char b;char c;int d;char e;} StTy4_2;
+typedef struct {char a;short b;char c;short d;char e;short f;} StTy4_3;
+typedef struct {char a;short b;char c;short d;int e;short f;char g;} StTy4_4;
+
+int struct_type_4_1_test(StTy4_1 x, int n);
+int struct_type_4_2_test(StTy4_2 x, int n);
+int struct_type_4_3_test(StTy4_3 x, int n);
+int struct_type_4_4_test(StTy4_4 x, int n);
+
+// 使用地址传递的结构体
+typedef struct {long a;long b;long c;} StTy5_1;
+typedef struct {long a;long b;long c;long d;long e;long f;long g;long h;} StTy5_2;
+
+int struct_type_5_1_test(StTy5_1 x, int n);
+int struct_type_5_2_test(StTy5_2 x, int n);
+
+// 掺杂浮点的结构体（成员数>=3）
+typedef struct {char a;float b;char c;} StTy6_1;
+
+int struct_type_6_1_test(StTy6_1 x, int n);
+
+// 掺杂浮点的结构体（成员数==1）
+typedef struct {float a;} StTy7_1;
+typedef struct {double a;} StTy7_2;
+
+int struct_type_7_1_test(StTy7_1 x);
+int struct_type_7_2_test(StTy7_2 x);
+
+// 掺杂浮点的结构体（成员数==2）
+typedef struct {float a;char b;} StTy8_1;
+typedef struct {int a;double b;} StTy8_2;
+
+int struct_type_8_1_test(StTy8_1 x, int n);
+int struct_type_8_2_test(StTy8_2 x, int n);
+
+// [200] 支持结构体实参
+typedef struct { int a,b; short c; char d; } Ty4;
+typedef struct { int a; float b; double c; } Ty5;
+typedef struct { unsigned char a[3]; } Ty6;
+typedef struct { long a, b, c; } Ty7;
+
+int struct_test5(Ty5 x, int n);
+int struct_test4(Ty4 x, int n);
+int struct_test6(Ty6 x, int n);
+int struct_test7(Ty7 x, int n);
+
 int main() {
   // [25] 支持零参函数定义
   ASSERT(3, ret3());
@@ -277,6 +354,123 @@ int main() {
   ASSERT(4, many_args1(1, 2, 3, 4, 5, 6, 40, 10));
   ASSERT(4, many_args2(1, 2, 3, 4, 5, 6, 7, 8, 40, 10));
   ASSERT(8, many_args3(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 80, 10));
+
+  // [200] 支持结构体实参
+  // 单个成员变量的结构体
+  ASSERT(1, ({StTy1_1 x={1}; struct_type_1_1_test(x);}));
+  ASSERT(10, ({StTy1_2 x={10}; struct_type_1_2_test(x);}));
+  ASSERT(10, ({StTy1_3 x={10}; struct_type_1_3_test(x);}));
+  ASSERT(10, ({StTy1_4 x={10}; struct_type_1_4_test(x);}));
+
+  // 使用一个寄存器的结构体
+  ASSERT(10, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,0);}));
+  ASSERT(20, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,1);}));
+  ASSERT(30, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,2);}));
+  ASSERT(40, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,3);}));
+  ASSERT(50, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,4);}));
+  ASSERT(60, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,5);}));
+  ASSERT(70, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,6);}));
+  ASSERT(80, ({StTy2_1 x={10,20,30,40,50,60,70,80}; struct_type_2_1_test(x,7);}));
+
+  ASSERT(10, ({StTy2_2 x={10,20}; struct_type_2_2_test(x,0);}));
+  ASSERT(20, ({StTy2_2 x={10,20}; struct_type_2_2_test(x,1);}));
+
+  ASSERT(10, ({StTy2_3 x={10,20}; struct_type_2_3_test(x,0);}));
+  ASSERT(20, ({StTy2_3 x={10,20}; struct_type_2_3_test(x,1);}));
+
+  ASSERT(10, ({StTy3_1 x={10,20,30,40,50}; struct_type_3_1_test(x,0);}));
+  ASSERT(20, ({StTy3_1 x={10,20,30,40,50}; struct_type_3_1_test(x,1);}));
+  ASSERT(30, ({StTy3_1 x={10,20,30,40,50}; struct_type_3_1_test(x,2);}));
+  ASSERT(40, ({StTy3_1 x={10,20,30,40,50}; struct_type_3_1_test(x,3);}));
+  ASSERT(50, ({StTy3_1 x={10,20,30,40,50}; struct_type_3_1_test(x,4);}));
+
+  ASSERT(10, ({StTy3_2 x={10,20,30,40}; struct_type_3_2_test(x,0);}));
+  ASSERT(20, ({StTy3_2 x={10,20,30,40}; struct_type_3_2_test(x,1);}));
+  ASSERT(30, ({StTy3_2 x={10,20,30,40}; struct_type_3_2_test(x,2);}));
+  ASSERT(40, ({StTy3_2 x={10,20,30,40}; struct_type_3_2_test(x,3);}));
+
+  ASSERT(10, ({StTy3_3 x={10,20,30,40}; struct_type_3_3_test(x,0);}));
+  ASSERT(20, ({StTy3_3 x={10,20,30,40}; struct_type_3_3_test(x,1);}));
+  ASSERT(30, ({StTy3_3 x={10,20,30,40}; struct_type_3_3_test(x,2);}));
+  ASSERT(40, ({StTy3_3 x={10,20,30,40}; struct_type_3_3_test(x,3);}));
+
+  // 使用两个寄存器的结构体
+  ASSERT(10, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,0);}));
+  ASSERT(20, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,1);}));
+  ASSERT(30, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,2);}));
+  ASSERT(40, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,3);}));
+  ASSERT(50, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,4);}));
+  ASSERT(60, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,5);}));
+  ASSERT(70, ({StTy4_1 x={10,20,30,40,50,60,70}; struct_type_4_1_test(x,6);}));
+
+  ASSERT(10, ({StTy4_2 x={10,20,30,40,50}; struct_type_4_2_test(x,0);}));
+  ASSERT(20, ({StTy4_2 x={10,20,30,40,50}; struct_type_4_2_test(x,1);}));
+  ASSERT(30, ({StTy4_2 x={10,20,30,40,50}; struct_type_4_2_test(x,2);}));
+  ASSERT(40, ({StTy4_2 x={10,20,30,40,50}; struct_type_4_2_test(x,3);}));
+  ASSERT(50, ({StTy4_2 x={10,20,30,40,50}; struct_type_4_2_test(x,4);}));
+
+  ASSERT(10, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,0);}));
+  ASSERT(20, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,1);}));
+  ASSERT(30, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,2);}));
+  ASSERT(40, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,3);}));
+  ASSERT(50, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,4);}));
+  ASSERT(60, ({StTy4_3 x={10,20,30,40,50,60}; struct_type_4_3_test(x,5);}));
+
+  ASSERT(10, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,0);}));
+  ASSERT(20, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,1);}));
+  ASSERT(30, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,2);}));
+  ASSERT(40, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,3);}));
+  ASSERT(50, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,4);}));
+  ASSERT(60, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,5);}));
+  ASSERT(70, ({StTy4_4 x={10,20,30,40,50,60,70}; struct_type_4_4_test(x,6);}));
+
+  // 使用地址传递的结构体
+  ASSERT(10, ({StTy5_1 x={10,20,30}; struct_type_5_1_test(x,0);}));
+  ASSERT(20, ({StTy5_1 x={10,20,30}; struct_type_5_1_test(x,1);}));
+  ASSERT(30, ({StTy5_1 x={10,20,30}; struct_type_5_1_test(x,2);}));
+
+  ASSERT(10, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,0);}));
+  ASSERT(20, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,1);}));
+  ASSERT(30, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,2);}));
+  ASSERT(40, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,3);}));
+  ASSERT(50, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,4);}));
+  ASSERT(60, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,5);}));
+  ASSERT(70, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,6);}));
+  ASSERT(80, ({StTy5_2 x={10,20,30,40,50,60,70,80}; struct_type_5_2_test(x,7);}));
+
+  // 掺杂浮点的结构体（成员数>=3）
+  ASSERT(10, ({StTy6_1 x={10,20.88,30}; struct_type_6_1_test(x,0);}));
+  ASSERT(20, ({StTy6_1 x={10,20.88,30}; struct_type_6_1_test(x,1);}));
+  ASSERT(30, ({StTy6_1 x={10,20.88,30}; struct_type_6_1_test(x,2);}));
+
+  // 掺杂浮点的结构体（成员数==1）
+  ASSERT(10, ({StTy7_1 x={10.34}; struct_type_7_1_test(x);}));
+  ASSERT(10, ({StTy7_2 x={10.34}; struct_type_7_2_test(x);}));
+
+  // 掺杂浮点的结构体（成员数==2）
+  ASSERT(10, ({StTy8_1 x={10.88,20}; struct_type_8_1_test(x,0);}));
+  ASSERT(20, ({StTy8_1 x={10.88,20}; struct_type_8_1_test(x,1);}));
+
+  ASSERT(10, ({StTy8_2 x={10,20.88}; struct_type_8_2_test(x,0);}));
+  ASSERT(20, ({StTy8_2 x={10,20.88}; struct_type_8_2_test(x,1);}));
+
+  // [200] 支持结构体实参
+  ASSERT(10, ({ Ty4 x={10,20,30,40}; struct_test4(x, 0); }));
+  ASSERT(20, ({ Ty4 x={10,20,30,40}; struct_test4(x, 1); }));
+  ASSERT(30, ({ Ty4 x={10,20,30,40}; struct_test4(x, 2); }));
+  ASSERT(40, ({ Ty4 x={10,20,30,40}; struct_test4(x, 3); }));
+
+  ASSERT(10, ({ Ty5 x={10,20,30}; struct_test5(x, 0); }));
+  ASSERT(20, ({ Ty5 x={10,20,30}; struct_test5(x, 1); }));
+  ASSERT(30, ({ Ty5 x={10,20,30}; struct_test5(x, 2); }));
+
+  ASSERT(10, ({ Ty6 x={10,20,30}; struct_test6(x, 0); }));
+  ASSERT(20, ({ Ty6 x={10,20,30}; struct_test6(x, 1); }));
+  ASSERT(30, ({ Ty6 x={10,20,30}; struct_test6(x, 2); }));
+
+  ASSERT(10, ({ Ty7 x={10,20,30}; struct_test7(x, 0); }));
+  ASSERT(20, ({ Ty7 x={10,20,30}; struct_test7(x, 1); }));
+  ASSERT(30, ({ Ty7 x={10,20,30}; struct_test7(x, 2); }));
 
   printf("OK\n");
   return 0;
