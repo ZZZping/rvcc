@@ -1436,9 +1436,79 @@ void emitText(Obj *Prog) {
         continue;
       }
 
-      if (Var->Ty->Kind != TY_ARRAY) {
+      Type *Ty = Var->Ty;
+      if (Ty->Kind != TY_ARRAY) {
         // 正常传递的形参
-        if (isFloNum(Var->Ty)) {
+        switch (Ty->Kind) {
+        case TY_STRUCT:
+        case TY_UNION: {
+          int N = 0;
+          bool HasFloat = false;
+          for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+            N++;
+            if (isFloNum(Mem->Ty))
+              HasFloat = true;
+          }
+
+          // 结构体的栈内偏移量
+          int StructOffset = Var->Offset;
+
+          // struct只有一个浮点寄存器
+          if (N == 1 && HasFloat) {
+            printLn("  # 一个浮点寄存器传递的struct");
+            storeFloat(FP++, StructOffset, Var->Ty->Size);
+            break;
+          }
+
+          // struct有一个或两个浮点寄存器
+          if (N == 2 && HasFloat) {
+            printLn("  # 一个或两个浮点寄存器传递的struct");
+            Member *Mem1 = Ty->Mems;
+            Member *Mem2 = Mem1->Next;
+
+            if (isFloNum(Mem1->Ty))
+              storeFloat(FP++, StructOffset, Mem1->Ty->Size);
+            else
+              storeGeneral(GP++, StructOffset, Mem1->Ty->Size);
+
+            if (isFloNum(Mem2->Ty))
+              storeFloat(FP++, StructOffset + Mem2->Offset, Mem2->Ty->Size);
+            else
+              storeGeneral(GP++, StructOffset + Mem2->Offset, Mem2->Ty->Size);
+            break;
+          }
+
+          // 一个整型寄存器传递的struct
+          if (Ty->Size <= 8) {
+            printLn("  # 一个寄存器传递的struct");
+            storeGeneral(GP++, StructOffset, Var->Ty->Size);
+            break;
+          }
+
+          // 两个整型寄存器传递的struct
+          if (Ty->Size <= 16) {
+            printLn("  # 两个寄存器传递的struct");
+            // 第一个寄存器
+            storeGeneral(GP++, StructOffset, 8);
+            // 第二个寄存器，偏移量为8，然后减去上一个寄存器占用的8个字节
+            storeGeneral(GP++, StructOffset + 8, Var->Ty->Size - 8);
+            break;
+          }
+
+          // 栈传递的struct
+          // printLn("  # 栈传递的struct地址");
+          // for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+          //   if (isFloNum(Mem->Ty))
+          //     storeFloat(FP++, StructOffset + Mem->Offset, Mem->Ty->Size);
+          //   else
+          //     storeGeneral(GP++, StructOffset + Mem->Offset, Mem->Ty->Size);
+          // }
+          // break;
+
+          // TODO：从栈中加载struct的地址，然后逐个加载到栈中}
+        }
+        case TY_FLOAT:
+        case TY_DOUBLE: {
           // 正常传递的浮点形参
           if (FP < FP_MAX) {
             printLn("  # 将浮点形参%s的浮点寄存器fa%d的值压栈", Var->Name, FP);
@@ -1447,10 +1517,13 @@ void emitText(Obj *Prog) {
             printLn("  # 将浮点形参%s的整型寄存器a%d的值压栈", Var->Name, GP);
             storeGeneral(GP++, Var->Offset, Var->Ty->Size);
           }
-        } else {
+          break;
+        }
+        default:
           // 正常传递的整型形参
           printLn("  # 正常传递的整型形参");
           storeGeneral(GP++, Var->Offset, Var->Ty->Size);
+          break;
         }
       } else {
         // 可变参数存入__va_area__，注意最多为7个
