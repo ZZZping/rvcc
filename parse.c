@@ -1450,7 +1450,13 @@ static Node *stmt(Token **Rest, Token *Tok) {
 
     addType(Exp);
     // 对于返回值进行类型转换
-    Nd->LHS = newCast(Exp, CurrentFn->Ty->ReturnTy);
+    Type *Ty = CurrentFn->Ty->ReturnTy;
+
+    // 对于返回值为结构体的情况特殊处理
+    if (Ty->Kind != TY_STRUCT && Ty->Kind != TY_UNION)
+      Exp = newCast(Exp, CurrentFn->Ty->ReturnTy);
+
+    Nd->LHS = Exp;
     return Nd;
   }
 
@@ -2899,6 +2905,13 @@ static Token *function(Token *Tok, Type *BaseTy, VarAttr *Attr) {
 
   // 函数参数
   createParamLVars(Ty->Params);
+
+  // A buffer for a struct/union return value is passed
+  // as the hidden first parameter.
+  Type *RTy = Ty->ReturnTy;
+  if ((RTy->Kind == TY_STRUCT || RTy->Kind == TY_UNION) && RTy->Size > 16)
+    newLVar("", pointerTo(RTy));
+
   Fn->Params = Locals;
 
   Tok = skip(Tok, "{");

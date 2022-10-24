@@ -680,6 +680,120 @@ static void copyRetBuffer(Obj *Var) {
   printLn("  sd a%d, %d(t0)", GP++, 8);
 }
 
+static void copyStructReg(void) {
+  Type *Ty = CurrentFn->Ty->ReturnTy;
+  int GP = 0, FP = 0;
+
+  printLn("  # 复制结构体寄存器：将存有struct地址的a0存入t0");
+  printLn("  mv t0, a0");
+
+  int N = 0;
+  bool HasFloat = false;
+  for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+    N++;
+    if (isFloNum(Mem->Ty))
+      HasFloat = true;
+  }
+
+  Member *Mem1 = Ty->Mems;
+  if (N == 1) {
+    if (isFloNum(Mem1->Ty)) {
+      if (Mem1->Ty->Size == 4)
+        printLn("  flw fa%d, 0(t0)", FP++);
+      else
+        printLn("  fld fa%d, 0(t0)", FP++);
+    } else {
+      switch (Mem1->Ty->Size) {
+      case 1:
+        printLn("  lb a%d, 0(t0)", GP++);
+        break;
+      case 2:
+        printLn("  lh a%d, 0(t0)", GP++);
+        break;
+      case 4:
+        printLn("  lw a%d, 0(t0)", GP++);
+        break;
+      default:
+        printLn("  ld a%d, 0(t0)", GP++);
+        break;
+      }
+    }
+
+    return;
+  }
+
+  Member *Mem2 = Mem1->Next;
+  int Offset = 8;
+  if (N == 2 && HasFloat) {
+    if (isFloNum(Mem1->Ty)) {
+      if (Mem1->Ty->Size == 4) {
+        printLn("  flw fa%d, 0(t0)", FP++);
+        Offset = 4;
+      } else {
+        printLn("  fld fa%d, 0(t0)", FP++);
+      }
+    } else {
+      switch (Mem1->Ty->Size) {
+      case 1:
+        printLn("  lb a%d, 0(t0)", GP++);
+        break;
+      case 2:
+        printLn("  lh a%d, 0(t0)", GP++);
+        break;
+      case 4:
+        printLn("  lw a%d, 0(t0)", GP++);
+        break;
+      default:
+        printLn("  ld a%d, 0(t0)", GP++);
+        break;
+      }
+    }
+
+    if (isFloNum(Mem2->Ty)) {
+      if (Mem2->Ty->Size == 4) {
+        printLn("  flw fa%d, %d(t0)", FP++, Offset);
+      } else {
+        printLn("  fld fa%d, %d(t0)", FP++, Offset);
+      }
+    } else {
+      switch (Mem2->Ty->Size) {
+      case 1:
+        printLn("  lb a%d, %d(t0)", GP++, Offset);
+        break;
+      case 2:
+        printLn("  lh a%d, %d(t0)", GP++, Offset);
+        break;
+      case 4:
+        printLn("  lw a%d, %d(t0)", GP++, Offset);
+        break;
+      default:
+        printLn("  ld a%d, %d(t0)", GP++, Offset);
+        break;
+      }
+    }
+
+    return;
+  }
+
+  printLn("  ld a%d, 0(t0)", GP++);
+  printLn("  ld a%d, %d(t0)", GP++, Offset);
+}
+
+static void copyStructMem(void) {
+  // Type *Ty = CurrentFn->Ty->ReturnTy;
+  // Obj *var = CurrentFn->Params;
+
+  // printLn("  # 复制结构体内存：将struct地址存入t0");
+  // printLn("  li t0, %d", var->Offset);
+  // printLn("  add t0, fp, t0", var->Offset);
+
+  // printLn("  # 复制结构体内存：复制所有字节");
+  // for (int i = 0; i < Ty->Size; i++) {
+  //   printLn("  lb t1, %d(t0)", i);
+  //   printLn("  sb t1, %d(t0)", i);
+  // }
+}
+
 // 生成表达式
 static void genExpr(Node *Nd) {
   // .loc 文件编号 行号
@@ -1320,8 +1434,17 @@ static void genStmt(Node *Nd) {
   case ND_RETURN:
     printLn("# 返回语句");
     // 不为空返回语句时
-    if (Nd->LHS)
+    if (Nd->LHS) {
       genExpr(Nd->LHS);
+
+      Type *Ty = Nd->LHS->Ty;
+      if (Ty->Kind == TY_STRUCT || Ty->Kind == TY_UNION) {
+        if (Ty->Size <= 16)
+          copyStructReg();
+        else
+          copyStructMem();
+      }
+    }
     // 无条件跳转语句，跳转到.L.return段
     // j offset是 jal x0, offset的别名指令
     printLn("  # 跳转到.L.return.%s段", CurrentFn->Name);
