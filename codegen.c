@@ -104,6 +104,13 @@ static void genAddr(Node *Nd) {
     printLn("  # 计算成员变量的地址偏移量");
     printLn("  addi a0, a0, %d", Nd->Mem->Offset);
     return;
+  // 函数调用
+  case ND_FUNCALL:
+    if (Nd->RetBuffer) {
+      genExpr(Nd);
+      return;
+    }
+    break;
   default:
     break;
   }
@@ -523,10 +530,16 @@ static void pushArgs2(Node *Args) {
 }
 
 // 处理参数
-static int pushArgs(Node *Args) {
+static int pushArgs(Node *Nd) {
   int Stack = 0, GP = 0, FP = 0;
 
-  for (Node *Arg = Args; Arg; Arg = Arg->Next) {
+  // If the return type is a large struct/union, the caller passes
+  // a pointer to a buffer as if it were the first argument.
+  if (Nd->RetBuffer && Nd->Ty->Size > 16)
+    GP++;
+
+  // Load as many arguments to the registers as possible.
+  for (Node *Arg = Nd->Args; Arg; Arg = Arg->Next) {
     Type *Ty = Arg->Ty;
 
     switch (Ty->Kind) {
@@ -571,8 +584,100 @@ static int pushArgs(Node *Args) {
   }
 
   // 第一遍处理栈传递的参数
-  pushArgs2(Args);
+  pushArgs2(Nd->Args);
+
+  // If the return type is a large struct/union, the caller passes
+  // a pointer to a buffer as if it were the first argument.
+  if (Nd->RetBuffer && Nd->Ty->Size > 16) {
+    printLn("  li t0, %d", Nd->RetBuffer->Offset);
+    printLn("  add a0, fp, t0");
+    push();
+  }
+
   return Stack;
+}
+
+static void copyRetBuffer(Obj *Var) {
+  Type *Ty = Var->Ty;
+  int GP = 0, FP = 0;
+
+  int N = 0;
+  bool HasFloat = false;
+  for (Member *Mem = Ty->Mems; Mem; Mem = Mem->Next) {
+    N++;
+    if (isFloNum(Mem->Ty))
+      HasFloat = true;
+  }
+
+  printLn("  # 复制返回值缓冲区：加载struct地址到t0");
+  printLn("  li t0, %d", Var->Offset);
+  printLn("  add t0, fp, t0");
+
+  Member *Mem1 = Ty->Mems;
+  if (N == 1) {
+    if (isFloNum(Mem1->Ty))
+      printLn("  fsd fa%d, 0(t0)", FP++);
+    else
+      printLn("  sd a%d, 0(t0)", GP++);
+
+    return;
+  }
+
+  Member *Mem2 = Mem1->Next;
+  // 第一个若是float，第二个偏移量为4，否则为8
+  int Offset = 8;
+  if (N == 2 && HasFloat) {
+    if (isFloNum(Mem1->Ty)) {
+      if (Mem1->Ty->Size == 4) {
+        printLn("  fsw fa%d, 0(t0)", FP++);
+        Offset = 4;
+      } else {
+        printLn("  fsd fa%d, 0(t0)", FP++);
+      }
+    } else {
+      switch (Mem1->Ty->Size) {
+      case 1:
+        printLn("  sb a%d, 0(t0)", GP++);
+        break;
+      case 2:
+        printLn("  sh a%d, 0(t0)", GP++);
+        break;
+      case 4:
+        printLn("  sw a%d, 0(t0)", GP++);
+        break;
+      default:
+        printLn("  sd a%d, 0(t0)", GP++);
+        break;
+      }
+    }
+
+    if (isFloNum(Mem2->Ty)) {
+      if (Mem2->Ty->Size == 4)
+        printLn("  fsw fa%d, %d(t0)", FP++, Offset);
+      else
+        printLn("  fsd fa%d, %d(t0)", FP++, Offset);
+    } else {
+      switch (Mem2->Ty->Size) {
+      case 1:
+        printLn("  sb a%d, %d(t0)", GP++, Offset);
+        break;
+      case 2:
+        printLn("  sh a%d, %d(t0)", GP++, Offset);
+        break;
+      case 4:
+        printLn("  sw a%d, %d(t0)", GP++, Offset);
+        break;
+      default:
+        printLn("  sd a%d, %d(t0)", GP++, Offset);
+        break;
+      }
+    }
+
+    return;
+  }
+
+  printLn("  sd a%d, 0(t0)", GP++);
+  printLn("  sd a%d, %d(t0)", GP++, 8);
 }
 
 // 生成表达式
@@ -762,13 +867,19 @@ static void genExpr(Node *Nd) {
   case ND_FUNCALL: {
     // 计算所有参数的值，正向压栈
     // 此处获取到栈传递参数的数量
-    int StackArgs = pushArgs(Nd->Args);
+    int StackArgs = pushArgs(Nd);
     genExpr(Nd->LHS);
     // 将a0的值存入t0
     printLn("  mv t0, a0");
 
     // 反向弹栈，a0->参数1，a1->参数2……
     int GP = 0, FP = 0;
+
+    // If the return type is a large struct/union, the caller passes
+    // a pointer to a buffer as if it were the first argument.
+    if (Nd->RetBuffer && Nd->Ty->Size > 16)
+      pop(GP++);
+
     // 读取函数形参中的参数类型
     Type *CurArg = Nd->FuncType->Params;
     for (Node *Arg = Nd->Args; Arg; Arg = Arg->Next) {
@@ -893,6 +1004,13 @@ static void genExpr(Node *Nd) {
       return;
     default:
       break;
+    }
+
+    // 如果返回的结构体小于16字节，直接使用两个寄存器返回
+    if (Nd->RetBuffer && Nd->Ty->Size <= 16) {
+      copyRetBuffer(Nd->RetBuffer);
+      printLn("  li t0, %d", Nd->RetBuffer->Offset);
+      printLn("  add a0, fp, t0");
     }
 
     return;
