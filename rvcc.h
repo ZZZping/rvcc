@@ -368,4 +368,5 @@ int alignTo(int N, int Align);
 
 bool fileExists(char *Path);
 
+extern StringArray IncludePaths;
 extern char *BaseFile;

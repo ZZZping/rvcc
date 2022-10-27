@@ -591,6 +591,19 @@ static bool expandMacro(Token **Rest, Token *Tok) {
   return true;
 }
 
+static char *searchIncludePaths(char *Filename) {
+  if (Filename[0] == '/')
+    return Filename;
+
+  // Search a file from the include paths.
+  for (int I = 0; I < IncludePaths.Len; I++) {
+    char *Path = format("%s/%s", IncludePaths.Data[I], Filename);
+    if (fileExists(Path))
+      return Path;
+  }
+  return NULL;
+}
+
 // Read an #include argument.
 static char *readIncludeFilename(Token **Rest, Token *Tok, bool *IsDquote) {
   // Pattern 1: #include "foo.h"
@@ -665,7 +678,7 @@ static Token *preprocess2(Token *Tok) {
       bool IsDquote;
       char *Filename = readIncludeFilename(&Tok, Tok->Next, &IsDquote);
 
-      if (Filename[0] != '/') {
+      if (Filename[0] != '/' && IsDquote) {
         char *Path =
             format("%s/%s", dirname(strdup(Start->File->Name)), Filename);
         if (fileExists(Path)) {
@@ -674,8 +687,8 @@ static Token *preprocess2(Token *Tok) {
         }
       }
 
-      // TODO: Search a file from the include paths.
-      Tok = includeFile(Tok, Filename, Start->Next->Next);
+      char *Path = searchIncludePaths(Filename);
+      Tok = includeFile(Tok, Path ? Path : Filename, Start->Next->Next);
       continue;
     }
 
