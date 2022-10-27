@@ -46,6 +46,17 @@ static bool takeArg(char *Arg) {
   return false;
 }
 
+static void addDefaultIncludePaths(char *Argv0) {
+  // We expect that chibicc-specific include files are installed
+  // to ./include relative to argv[0].
+  strArrayPush(&IncludePaths, format("%s/include", dirname(strdup(Argv0))));
+
+  // Add standard include paths.
+  strArrayPush(&IncludePaths, "/usr/local/include");
+  strArrayPush(&IncludePaths, "/usr/include/riscv64-linux-gnu");
+  strArrayPush(&IncludePaths, "/usr/include");
+}
+
 // 解析传入程序的参数
 static void parseArgs(int Argc, char **Argv) {
   // 确保需要一个参数的选项，存在一个参数
@@ -452,6 +463,7 @@ int main(int Argc, char **Argv) {
   // 如果指定了-cc1选项
   // 直接编译C文件到汇编文件
   if (OptCC1) {
+    addDefaultIncludePaths(Argv[0]);
     cc1();
     return 0;
   }
