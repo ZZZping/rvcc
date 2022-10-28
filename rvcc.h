@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <glob.h>
 #include <libgen.h>
 #include <math.h>
 #include <stdarg.h>
@@ -14,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
